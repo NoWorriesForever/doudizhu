@@ -1,0 +1,12 @@
+{
+  "name": "doudizhu",
+  "version": "2.0.0",
+  "description": "斗地主联机模拟器 - 重构版",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/engine.test.js",
+    "selftest": "SET SELFTEST=1 && node server.js"
+  },
+  "license": "MIT"
+}

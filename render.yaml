@@ -1,0 +1,17 @@
+# Render Blueprint —— 免费部署「斗地主联机模拟器」
+# 用法：在 Render 新建 Blueprint（关联 GitHub 仓库），Render 会按本文件自动创建免费 Web 服务。
+# 免费档说明：无需信用卡；服务在空闲约 15 分钟后会自动休眠，下次访问时唤醒（冷启动约 20~40 秒）。
+services:
+  - type: web
+    name: doudizhu
+    runtime: node
+    plan: free
+    branch: main
+    buildCommand: "npm install"
+    startCommand: "npm start"
+    healthCheckPath: "/"
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: HOST
+        value: "0.0.0.0"

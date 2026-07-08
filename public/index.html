@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>斗地主 · 联机模拟器</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="toast" id="toast"></div>
+<div class="netbar hide" id="netbar">连接中断，正在重连…（你的回合会被暂时托管，重连后自动接管）</div>
+
+<div class="wrap">
+  <h1>斗<b>地主</b> · 联机模拟器</h1>
+  <div class="sub" id="sub">不同 IP 打开本页 + 相同房间号即可同桌 · 满3人准备后自动发牌</div>
+
+  <!-- 大厅 -->
+  <div class="lobby" id="lobby">
+    <!-- 直接进房卡片 -->
+    <div class="lobby-card" id="joinCard">
+      <h2>加入房间</h2>
+      <div class="field"><label>你的昵称</label><input id="name" maxlength="10" placeholder="例如：小明"></div>
+      <div class="field"><label>房间号（同房间号即可同桌）</label><input id="room" maxlength="16" placeholder="例如：888"></div>
+      <div class="field"><label>本轮局数</label>
+        <div class="roundsel" id="roundSel">
+          <button type="button" data-r="1">1 局</button>
+          <button type="button" data-r="3" class="on">3 局</button>
+          <button type="button" data-r="5">5 局</button>
+          <button type="button" data-r="10">10 局</button>
+        </div>
+      </div>
+      <div class="field"><button class="btn" id="joinBtn">进入房间</button></div>
+    </div>
+
+    <!-- 发现房间（进行中 + 未满大厅）-->
+    <div class="rooms-browser" id="roomsBrowser">
+      <h2>发现房间</h2>
+      <div class="rooms-list" id="roomsList"></div>
+      <div id="reqWaiting" class="req-waiting hide"></div>
+      <div class="rooms-hint">进行中的对局与未满大厅都会显示在这里。点击「申请加入」向房主发起申请，房主通过后即可进房。</div>
+    </div>
+
+    <!-- 已在房间内（准备阶段）-->
+    <div id="lobbyInfo" class="lobby-card hide">
+      <div class="msg" id="lobbyMsg"></div>
+      <div id="roundInfo"></div>
+      <div id="seatList"></div>
+      <div class="row">
+        <button class="btn sm" id="readyBtn">准备</button>
+        <button class="btn ghost sm" id="botBtn">加机器人</button>
+        <button class="btn ghost sm" id="exitLobbyBtn">返回大厅</button>
+      </div>
+      <div id="reqBox" class="reqbox hide"></div>
+    </div>
+  </div>
+
+  <!-- 牌桌 -->
+  <div class="table hide" id="game">
+    <div class="topbar">
+      <span id="roomTag"></span>
+      <button class="btn ghost sm" id="leaveBtn">退出</button>
+    </div>
+    <div class="seats" id="seats"></div>
+    <div class="center">
+      <div class="msg" id="gameMsg"></div>
+      <div class="bottom-cards" id="bottomBox"></div>
+      <div class="played" id="playedBox"></div>
+      <div class="bidbtns hide" id="bidBox"></div>
+    </div>
+    <div class="mymeta" id="myMeta"></div>
+    <div class="mytimer hide" id="myTimer">
+      <div class="mytimer-bar"><span id="myTimerFill"></span></div>
+      <div class="mytimer-num" id="myTimerNum"></div>
+    </div>
+    <div class="myhand" id="myhand"></div>
+    <div class="actions" id="actions"></div>
+    <div class="rules">牌型：单/对/三/三带一/三带二/顺子(&#x2265;5)/连对(&#x2265;3)/飞机/四带二/炸弹/王炸 · 炸弹压一切，王炸最大</div>
+  </div>
+
+  <!-- 回放面板 -->
+  <div class="replay-panel hide" id="replayPanel">
+    <div class="replay-header">
+      <span id="replayTitle">本局回放</span>
+      <button class="btn ghost sm" id="replayCloseBtn">关闭</button>
+    </div>
+    <div class="replay-body" id="replayBody"></div>
+    <div class="replay-controls">
+      <button class="btn sm" id="replayPrevBtn">上一步</button>
+      <span id="replayStep">0/0</span>
+      <button class="btn sm" id="replayNextBtn">下一步</button>
+      <button class="btn sm" id="replayAutoBtn">自动播放</button>
+    </div>
+  </div>
+
+  <!-- 结算弹窗 -->
+  <div class="banner hide" id="banner">
+    <div class="box">
+      <div class="big" id="bannerBig"></div>
+      <div id="bannerSub"></div>
+      <button class="btn" id="againBtn">再来一局</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
