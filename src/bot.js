@@ -346,6 +346,55 @@ function genBeat(hand, last, preferHigh) {
   return null;
 }
 
+// ---- 散牌识别：不参与任何牌型（顺子/连对/三张/四张）的单张或对子 ----
+// 用于跟队友时「顺手把散牌清出去」——不影响牌型结构，也不浪费控牌
+
+function findSpareSingles(hand) {
+  const byV = {};
+  for (const c of hand) (byV[c.v] = byV[c.v] || []).push(c);
+  const vals = Object.keys(byV).map(Number).sort((a, b) => a - b);
+  // 标记 5+ 连续单牌（潜在顺子）的成员，保护不拆
+  const inStraight = new Set();
+  let run = [];
+  for (const v of vals) {
+    if (run.length === 0 || v === run[run.length - 1] + 1) run.push(v);
+    else { if (run.length >= 5) run.forEach(x => inStraight.add(x)); run = [v]; }
+  }
+  if (run.length >= 5) run.forEach(x => inStraight.add(x));
+  const res = [];
+  for (const v of vals) {
+    if (byV[v].length !== 1) continue;          // 非单张（是某对/三/四的一部分）
+    if (inStraight.has(v)) continue;            // 顺子成员保护
+    res.push(byV[v][0]);
+  }
+  return res;                                    // 已按 v 升序
+}
+
+function findSparePairs(hand) {
+  const byV = {};
+  for (const c of hand) (byV[c.v] = byV[c.v] || []).push(c);
+  const vals = Object.keys(byV).map(Number).sort((a, b) => a - b);
+  // 标记 3+ 连续对子（潜在连对）的成员，保护不拆
+  const inDs = new Set();
+  let run = [];
+  for (const v of vals) {
+    if (byV[v].length >= 2) {
+      if (run.length === 0 || v === run[run.length - 1] + 1) run.push(v);
+      else { if (run.length >= 3) run.forEach(x => inDs.add(x)); run = [v]; }
+    } else {
+      if (run.length >= 3) run.forEach(x => inDs.add(x)); run = [];
+    }
+  }
+  if (run.length >= 3) run.forEach(x => inDs.add(x));
+  const res = [];
+  for (const v of vals) {
+    if (byV[v].length !== 2) continue;           // 仅恰好 2 张（三张/四张不算对）
+    if (inDs.has(v)) continue;                   // 连对成员保护
+    res.push(byV[v].slice(0, 2));
+  }
+  return res;                                    // 按 v 升序
+}
+
 // ---- 炸弹信息 ----
 
 function bombsOf(hand) {
@@ -444,11 +493,32 @@ function botMove(room, seat) {
     return { action: 'pass' };
   }
 
-  // ---- 跟队友：默认不抢（把牌权留给队友）；仅地主即将获胜时用大牌夺回牌权 ----
+  // ---- 跟队友：顺手把「散牌」清出去（散牌不影响牌型、小幅压住队友不算压太多）----
+  // 仅用散单/散对，且点数不超过 A（不用 2/王 接队友，避免压队友太多、浪费控牌）
   const ll = room.players.find(pl => pl.seat === room.landlordSeat);
   const landlordDanger = ll && ll.hand.length <= 2;
+
+  if (last.type === 'single') {
+    const sp = findSpareSingles(p.hand);
+    for (const card of sp) {
+      if (card.v > last.rank && card.v <= 14) {   // 散单牌小幅压住队友；不用 2/王
+        const ids = [card.id];
+        if (tryPlay(p, ids, last)) return { action: 'play', ids };
+      }
+    }
+  } else if (last.type === 'pair') {
+    const sp = findSparePairs(p.hand);
+    for (const cards of sp) {
+      const v = cards[0].v;
+      if (v > last.rank && v <= 14) {             // 散对子小幅压住队友；不用 22
+        const ids = cards.map(c => c.id);
+        if (tryPlay(p, ids, last)) return { action: 'play', ids };
+      }
+    }
+  }
+
+  // 地主即将获胜（≤2 张）：用大牌/炸夺回牌权，地主多半压不住
   if (landlordDanger) {
-    // 用偏大牌（2/王炸）夺回牌权，地主多半压不住；不为小牌浪费
     const strong = genBeat(p.hand, last, true);
     if (strong) {
       const bc = comboOfIds(p.hand, strong);
