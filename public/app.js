@@ -1,5 +1,5 @@
 // ============================================================
-// 斗地主前端 · SSE 通信 + 局部更新 + 回放
+// 斗地主前端 · WebSocket 通信 + 局部更新
 // ============================================================
 
 const $ = (id) => document.getElementById(id);
@@ -233,11 +233,6 @@ function render(st) {
     '房间 ' + st.roomId + roundTag + ' · <span class="mytotal">积分 <b>' + fmtScore(myInfo.score || 0) + '</b></span>' + multTag;
   $('gameMsg').textContent = st.message;
 
-  // 未隐藏回放面板 → 更新步骤高亮
-  if (!$('replayPanel').classList.contains('hide')) {
-    updateReplayHighlight();
-  }
-
   renderSeats(st);
   renderBottom(st);
   renderPlayed(st);
@@ -427,15 +422,6 @@ function renderPlayed(st) {
     tip.className = 'reveal-tip';
     tip.textContent = st.phase === 'reveal' ? '亮牌！查看各家余牌，即将结算…' : '本局结束';
     pb.appendChild(tip);
-    // 加回放按钮
-    if (st.playLog && st.playLog.length) {
-      const btn = document.createElement('button');
-      btn.className = 'btn ghost sm';
-      btn.textContent = '回看本局';
-      btn.style.cssText = 'margin-left:8px';
-      btn.onclick = () => openReplay(st);
-      pb.appendChild(btn);
-    }
   } else if (st.lastPlay) {
     const who = st.seats[st.lastPlay.seat];
     const lbl = document.createElement('div');
@@ -698,71 +684,6 @@ function toggleSel(id, el) {
     if (el && el.dataset.cid) toggleSel(el.dataset.cid, el);
   });
 })();
-
-// ---- 回放 ----
-
-let replaySteps = [];
-let replayIdx = -1;
-
-function openReplay(st) {
-  if (!st.playLog || !st.playLog.length) return;
-  replaySteps = st.playLog;
-  replayIdx = -1;
-  $('replayPanel').classList.remove('hide');
-  $('replayTitle').textContent = '第 ' + st.roundNo + ' 局回放';
-  renderReplay();
-}
-
-function renderReplay() {
-  const body = $('replayBody');
-  body.innerHTML = '';
-  replaySteps.forEach((step, i) => {
-    const div = document.createElement('div');
-    div.className = 'step' + (i === replayIdx ? ' cur' : '');
-    div.textContent = '第' + (i + 1) + '手  ' + step.seatName + '  ' +
-      step.cardIds.length + '张  (' + step.combo.type + ')';
-    body.appendChild(div);
-  });
-  $('replayStep').textContent = (replayIdx + 1) + '/' + replaySteps.length;
-  if (replayIdx >= 0) {
-    body.children[replayIdx]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }
-}
-
-function updateReplayHighlight() {
-  if (replaySteps.length === 0) return;
-  const body = $('replayBody');
-  [...body.children].forEach((d, i) => {
-    d.className = 'step' + (i === replayIdx ? ' cur' : '');
-  });
-  $('replayStep').textContent = (replayIdx + 1) + '/' + replaySteps.length;
-}
-
-$('replayCloseBtn').onclick = () => {
-  $('replayPanel').classList.add('hide');
-  replaySteps = [];
-  replayIdx = -1;
-};
-$('replayPrevBtn').onclick = () => {
-  if (replayIdx > 0) { replayIdx--; renderReplay(); }
-};
-$('replayNextBtn').onclick = () => {
-  if (replayIdx < replaySteps.length - 1) { replayIdx++; renderReplay(); }
-};
-$('replayAutoBtn').onclick = () => {
-  $('replayAutoBtn').disabled = true;
-  replayIdx = -1;
-  function step() {
-    replayIdx++;
-    renderReplay();
-    if (replayIdx < replaySteps.length - 1) {
-      setTimeout(step, 800);
-    } else {
-      $('replayAutoBtn').disabled = false;
-    }
-  }
-  step();
-};
 
 // ---- 局数选择器 ----
 

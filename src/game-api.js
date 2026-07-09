@@ -31,18 +31,21 @@ function processApi({ room, route, q, body, deps }) {
     // ---- 离开 ----
     if (route === 'leave') {
       const wasHost = room.hostId === body.playerId;
+      // 先清理已离线超时的非机器人玩家（视为已离开），避免僵尸真人占用座位、阻止房间重置
+      const ONLINE_MS = 60000;
+      room.players = room.players.filter(x => x.isBot || (now - (x.lastSeen || 0)) < ONLINE_MS);
       if (wasHost) {
         const humans = room.players.filter(x => !x.isBot && x.id !== body.playerId);
         room.hostId = humans.length ? humans[0].id : null;
       }
       room.players = room.players.filter(x => x.id !== body.playerId);
-      // 离开后若房间内仅剩机器人（或已空），自动清空房间：移除所有机器人并重置为干净大厅。
-      // DO 实例保留可复用，下次有人进该房间即全新开始（不删除实例，避免房间号失效）。
+      // 离开后若房间内已无任何真人（只剩机器人或空）：重置房间并从大厅索引移除（房间消失）
       const humansLeft = room.players.filter(x => !x.isBot);
       if (humansLeft.length === 0) {
         room.players = [];
         room.hostId = null;
         roomModule.resetToLobby(room);
+        room.__shouldDelete = true;   // 交给 DO：删除存储 + 从大厅移除，房间彻底消失
         broadcast(room);
         return ok({ ok: true });
       }
