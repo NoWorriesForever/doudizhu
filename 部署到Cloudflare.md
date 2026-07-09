@@ -157,6 +157,16 @@ routes = [
 3. **WebSocket 连不上**：确认 `wrangler.toml` 里 `compatibility_date` 较新（已设 2024-09-23，支持 WS）。浏览器访问 `https://` 时前端自动用 `wss://`。
 4. **改了前端没生效**：Cloudflare 静态资源有缓存，部署后用 `Ctrl+Shift+R` 硬刷新。
 5. **机器人不动 / 出牌卡住**：房间必须有人通过 WebSocket 连着，定时推进才会跑（DO 在无连接时会休眠以省资源）。前端进房即自动建立 WS，正常不会卡；若全员的 WS 都断了，游戏会暂停，有人回来即继续。
+6. **`npm` / `npx` 报"无法加载文件，因为在此系统上禁止运行脚本"**：Windows PowerShell 默认 **执行策略（Execution Policy）= Restricted**，禁止运行脚本；而 npm/npx 在 Windows 上有 `.ps1` 包装，所以被拦。两种解决：
+   - **最简单（推荐）**：改用**命令提示符（CMD）**——在 doudizhu 文件夹里点地址栏输入 `cmd` 回车打开，再跑 `npm install` / `npx wrangler login` / `npm run deploy`（CMD 不受此限制，npm 走 `.cmd` 包装）。
+   - **或**在当前 PowerShell 窗口先执行 `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`（只对当前这个窗口有效，关掉即失效，不改系统全局设置，最安全），再跑命令。
+7. **`wrangler` 报 "Timed out waiting for authorization code"**：浏览器 OAuth 回调超时（wrangler 在本地开 localhost 临时端口等授权回调，但没收到——常见原因：你点的是更早一次 `login` 的授权页而非本次 `deploy` 新开的页，或防火墙/杀软拦截了 localhost 回调）。这时**放弃浏览器登录，改用 API Token（见上文"方式 B"）**：关掉卡住的窗口 → 去 dash.cloudflare.com/profile/api-tokens 建 Token（模板 **Edit Cloudflare Workers**）→ 在 CMD 里 `set CLOUDFLARE_API_TOKEN=你的token`（CMD 语法，不是 PowerShell 的 `$env:`）→ 直接 `npm run deploy`。Token 方式不弹浏览器、不走回调，最稳。末尾那行 `Assertion failed: ...UV_HANDLE_CLOSING` 是 wrangler 退出时的 Windows 底层小崩溃，可忽略。
+8. **免费计划报 "must create a namespace using a `new_sqlite_classes` migration" [code: 10097]**：Cloudflare 免费计划现在强制 Durable Objects 用 **SQLite 后端**，迁移声明必须用 `new_sqlite_classes` 而非旧的 `new_classes`。把 `wrangler.toml` 的 `[[migrations]]` 里 `new_classes = ["Room", "Lobby"]` 改成 `new_sqlite_classes = ["Room", "Lobby"]`，重跑 `npm run deploy` 即可。DO 代码里 `state.storage.get/put` 在 SQLite 后端**仍然兼容**，无需改业务代码。
+9. **新账号首次部署报 "You need a workers.dev subdomain... [code: 10063]"**：首次部署前必须先创建 workers.dev 子域名。
+   - **控制台创建**：dash.cloudflare.com → 左侧 **Workers & Pages** → 首次进入会在页面顶部/中间出现子域设置框（填前缀如 `zhanghong`，全局唯一、设后不可改）。若新版 UI 没弹框，直接访问 `https://dash.cloudflare.com/<ACCOUNT_ID>/workers` 或点右上角账户 → Account Home 找 Workers 区域。
+   - **API 创建已禁用（重要）**：Cloudflare 已关闭创建子域的 API 端点——用 API Token 调返回 `10405 Method not allowed`，用 Global Key 调返回 `1001 method_not_allowed`。**curl 方案全部失效，只能走控制台 UI**。精确入口：打开 [Workers & Pages](https://dash.cloudflare.com/?to=/:account/workers-and-pages) → 找 **Your subdomain** 一行，点右边的 **Change**（首次为空白待填）→ 输入前缀（如 `zhanghong`，全局唯一、设后不可改）→ 保存。若页面先让你建/选 Worker，进任意 Worker 的 **Settings → Domains & Routes** 也能看到 `workers.dev` 子域设置。兜底：在 Workers & Pages 点 **Create** 新建空白 Worker 并部署，流程会强制先设子域，设完可删该临时 Worker。
+     返回 `{"success":true,...}` 即建好（前缀被占会提示 unavailable，换一个）。Global Key 权限很大，仅在本机命令行用即可。
+   - 建好后回到 CMD 重跑 `npm run deploy`。最终网址形如 `https://doudizhu.<前缀>.workers.dev`（worker 名来自 wrangler.toml 的 `name`）。
 
 ---
 
