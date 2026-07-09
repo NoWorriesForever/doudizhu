@@ -2,10 +2,10 @@
 
 // ============================================================
 // 机器人 AI
-// 改进：加记牌器、更优炸弹时机、拆牌不拆炸弹、农民配合增强
+// 改进：领出保留 2/王/炸弹作为控牌、低牌优先；农民配合（不抢队友、必要时用大牌夺回牌权）
 // ============================================================
 
-const { parseCombo, countMap } = require('./engine');
+const { parseCombo, beats, countMap } = require('./engine');
 
 // ---- 记牌器：推算对手可能持有的牌 ----
 
@@ -53,7 +53,7 @@ function botBid(room, seat) {
   }
 }
 
-// ---- 拆牌：把一手牌拆成「组+炸弹」 ----
+// ---- 拆牌：把一手牌拆成「组+炸弹」（仅保留给外部/测试用，领出不依赖它）----
 
 function decompose(cards) {
   const byV = {};
@@ -143,40 +143,116 @@ function decompose(cards) {
   return { groups, bombs };
 }
 
-// ---- 领出 ----
+// ============================================================
+// 领出（自己握有牌权时）
+// 原则：低牌优先、尽量出长牌型清牌；2/王/炸弹作为控牌，非必要时不主动领出
+// ============================================================
 
-function botLead(hand, ctx) {
-  const { groups, bombs } = decompose(hand);
-  if (groups.length === 0) {
-    if (bombs.length) return bombs.sort((a, b) => a.rank - b.rank)[0].cards.map(c => c.id);
-    return [hand[0].id];
+function lowestOtherSingle(byV, excludeV) {
+  for (let v = 3; v <= 17; v++) {
+    if (v === excludeV) continue;
+    const n = (byV[v] || []).length;
+    if (n >= 1 && n !== 4) return byV[v][0];          // 不拆炸弹做翅膀
+    if (n === 1 && v >= 16) return byV[v][0];          // 王仅作最后手段
   }
-
-  const minV = g => Math.min(...g.cards.map(c => c.v));
-
-  // 对手快走完（≤2张）：不喂单张，优先出多张组合
-  if (ctx && ctx.oppMin <= 2) {
-    const multi = groups.filter(g => g.cards.length >= 2);
-    if (multi.length) {
-      multi.sort((a, b) => (b.cards.length - a.cards.length) || (minV(a) - minV(b)));
-      return multi[0].cards.map(c => c.id);
-    }
-    const singles = groups.filter(g => g.type === 'single').sort((a, b) => b.rank - a.rank);
-    if (singles.length) return singles[0].cards.map(c => c.id);
+  return null;
+}
+function lowestOtherPair(byV, excludeV) {
+  for (let v = 3; v <= 15; v++) {
+    if (v === excludeV) continue;
+    const n = (byV[v] || []).length;
+    if (n >= 2 && n !== 4) return byV[v].slice(0, 2);  // 不拆炸弹做翅膀
   }
-
-  // 自己快走完（≤4张）：直接出最大组清牌，能走完就用炸弹
-  if (hand.length <= 4 && bombs.length) {
-    // 用最小炸弹开路后一次出完
-    return bombs.sort((a, b) => a.rank - b.rank)[0].cards.map(c => c.id);
-  }
-
-  // 常态：最小组合领出
-  groups.sort((a, b) => (minV(a) - minV(b)) || (b.cards.length - a.cards.length));
-  return groups[0].cards.map(c => c.id);
+  return null;
 }
 
-// ---- 跟牌 ----
+// 生成所有「可领出」的候选牌组（不含炸弹/王炸，避免无谓拆炸）
+function genLeadCandidates(hand) {
+  const byV = {};
+  for (const c of hand) (byV[c.v] = byV[c.v] || []).push(c);
+  const cnt = v => (byV[v] ? byV[v].length : 0);
+  const cand = [];
+  const add = arr => cand.push(arr.map(c => c.id));
+
+  // 单张 / 对子（不拆四张）
+  for (let v = 3; v <= 17; v++) {
+    if (cnt(v) >= 1 && cnt(v) !== 4) add([byV[v][0]]);
+    if (v <= 15 && cnt(v) >= 2 && cnt(v) !== 4) add(byV[v].slice(0, 2));
+  }
+  // 三张（可带单/对），带牌用更低的非炸牌
+  for (let v = 3; v <= 15; v++) {
+    if (cnt(v) >= 3 && cnt(v) !== 4) {
+      add(byV[v].slice(0, 3));
+      const ws = lowestOtherSingle(byV, v);
+      if (ws) add([...byV[v].slice(0, 3), ws]);
+      const wp = lowestOtherPair(byV, v);
+      if (wp) add([...byV[v].slice(0, 3), ...wp]);
+    }
+  }
+  // 顺子 5..12（不含 2/王）
+  for (let len = 5; len <= 12; len++)
+    for (let s = 3; s + len - 1 <= 14; s++) {
+      let ok = true, cs = [];
+      for (let k = 0; k < len; k++) { const v = s + k; if (cnt(v) >= 1 && cnt(v) !== 4) cs.push(byV[v][0]); else { ok = false; break; } }
+      if (ok) add(cs);
+    }
+  // 连对 3..10
+  for (let len = 3; len <= 10; len++)
+    for (let s = 3; s + len - 1 <= 14; s++) {
+      let ok = true, cs = [];
+      for (let k = 0; k < len; k++) { const v = s + k; if (cnt(v) >= 2 && cnt(v) !== 4) cs.push(...byV[v].slice(0, 2)); else { ok = false; break; } }
+      if (ok) add(cs);
+    }
+  // 飞机（连续三张）2..6（纯飞机，不带翅膀，简单稳健）
+  for (let len = 2; len <= 6; len++)
+    for (let s = 3; s + len - 1 <= 14; s++) {
+      let ok = true, cs = [];
+      for (let k = 0; k < len; k++) { const v = s + k; if (cnt(v) >= 3 && cnt(v) !== 4) cs.push(...byV[v].slice(0, 3)); else { ok = false; break; } }
+      if (ok) add(cs);
+    }
+  return cand;
+}
+
+// 领出代价：越小越优先（低牌先出、长牌型优先清、控牌不轻易动）
+function leadCost(hand, ids) {
+  const cs = hand.filter(c => ids.indexOf(c.id) >= 0);
+  const combo = parseCombo(cs.map(c => c.v));
+  if (!combo) return 9999;
+  const maxv = Math.max(...cs.map(c => c.v));
+  let cost = maxv;                          // 牌值越低越优先
+  if (cs.some(c => c.v >= 15)) cost += 80;  // 2/王不主动领出
+  if (combo.type === 'bomb' || combo.type === 'rocket') cost += 200;
+  cost -= cs.length * 1.5;                  // 长牌型优先清（顺子/连对/飞机）
+  return cost;
+}
+
+function lowestCardId(hand) {
+  let best = hand[0];
+  for (const c of hand) if (c.v < best.v) best = c;
+  return best.id;
+}
+
+function botLead(hand, ctx) {
+  // 一手即可出完：直接全出
+  const whole = parseCombo(hand.map(c => c.v));
+  if (whole) return hand.map(c => c.id);
+
+  const cands = genLeadCandidates(hand);
+  if (cands.length) {
+    cands.sort((a, b) => leadCost(hand, a) - leadCost(hand, b));
+    return cands[0];
+  }
+
+  // 候选为空（仅剩炸弹/王炸）→ 出最小炸弹或王炸
+  const { byV, list, rocket } = bombsOf(hand);
+  if (rocket) return rocket;
+  if (list.length) return byV[list[0]].map(c => c.id);
+  return [hand[0].id];
+}
+
+// ============================================================
+// 跟牌
+// ============================================================
 
 function genBeat(hand, last, preferHigh) {
   const byV = {};
@@ -198,16 +274,21 @@ function genBeat(hand, last, preferHigh) {
   };
 
   if (t === 'single') {
-    const cand = vals.filter(v => v > rank);
-    const order = preferHigh ? cand.slice().reverse() : cand;
-    for (const v of order) if (cnt(v) < 4) return [byV[v][0].id];
-    if (order.length) return [byV[order[0]][0].id];
+    // 优先用非炸弹单张；无路可走才允许拆炸弹
+    const cand = vals.filter(v => v > rank && cnt(v) < 4);
+    const pool = cand.length ? cand : vals.filter(v => v > rank);
+    if (pool.length) {
+      const order = preferHigh ? pool.slice().reverse() : pool;
+      return [byV[order[0]][0].id];
+    }
   }
   if (t === 'pair') {
-    const cand = vals.filter(v => v > rank && cnt(v) >= 2);
-    const order = preferHigh ? cand.slice().reverse() : cand;
-    for (const v of order) if (cnt(v) < 4) return ids(byV[v].slice(0, 2));
-    if (order.length) return ids(byV[order[0]].slice(0, 2));
+    const cand = vals.filter(v => v > rank && cnt(v) >= 2 && cnt(v) < 4);
+    const pool = cand.length ? cand : vals.filter(v => v > rank && cnt(v) >= 2);
+    if (pool.length) {
+      const order = preferHigh ? pool.slice().reverse() : pool;
+      return ids(byV[order[0]].slice(0, 2));
+    }
   }
   if (t === 'triple' || t === 'triple1' || t === 'triple2') {
     for (const v of vals) {
@@ -281,16 +362,54 @@ function comboOfIds(hand, ids) {
   return parseCombo(cs.map(c => c.v));
 }
 
-// ---- 主决策 ----
+// 一手出完（整手恰为一组合法牌且压得过上家）
+function findWinningMove(hand, last) {
+  const wc = parseCombo(hand.map(c => c.v));
+  if (wc && beats(last, wc)) return hand.map(c => c.id);
+  return null;
+}
+
+// 是否值得炸：当前持牌权者快走完，或强制（队友危急夺权）
+function considerBomb(hand, last, lastSeat, room, force) {
+  const { byV, list, rocket } = bombsOf(hand);
+  if (last.type === 'rocket') return null;
+  const pp = room.players.find(pl => pl.seat === lastSeat);
+  const opponentNear = pp && pp.hand.length <= 2;
+  if (!force && !opponentNear) return null;
+
+  if (last.type === 'bomb') {
+    const bigger = list.filter(v => v > last.rank);
+    if (bigger.length) return byV[bigger[0]].map(c => c.id);
+    if (rocket) return rocket;
+    return null;
+  }
+  if (list.length) return byV[list[0]].map(c => c.id);
+  if (rocket) return rocket;
+  return null;
+}
+
+// 校验一手牌合法且（跟牌时）压得过上家
+function tryPlay(p, ids, lastCombo) {
+  const cs = p.hand.filter(c => ids.indexOf(c.id) >= 0);
+  const combo = parseCombo(cs.map(c => c.v));
+  if (!combo) return null;
+  if (lastCombo && !beats(lastCombo, combo)) return null;
+  return combo;
+}
+
+// ============================================================
+// 主决策
+// ============================================================
 
 function botMove(room, seat) {
   const p = room.players.find(pl => pl.seat === seat);
-  if (!p) return;
+  if (!p) return { action: 'pass' };
 
   const sideOf = s => (s === room.landlordSeat ? 'L' : 'F');
   const mySide = sideOf(seat);
+  const iAmFarmer = seat !== room.landlordSeat;
 
-  // 对手最少剩牌数
+  // 对手（不同阵营）最少剩牌数
   const oppLens = [0, 1, 2]
     .filter(s => s !== seat && sideOf(s) !== mySide)
     .map(s => {
@@ -299,86 +418,47 @@ function botMove(room, seat) {
     });
   const oppMin = oppLens.length ? Math.min(...oppLens) : 99;
 
-  // 领出
+  // ---- 领出（握有牌权）：低牌先出，保留 2/王/炸弹作控牌 ----
   if (room.lastPlay === null) {
     const ids = botLead(p.hand, { oppMin });
-    if (ids && ids.length) { room.curSeat = seat; return { action: 'play', ids }; }
-    return { action: 'pass' };
+    if (tryPlay(p, ids, null)) return { action: 'play', ids };
+    // 兜底（不应发生）：出最小单张，保证推进
+    return { action: 'play', ids: [lowestCardId(p.hand)] };
   }
 
   const last = room.lastPlay.combo;
   const lastSeat = room.lastPlay.seat;
-  const iAmFarmer = seat !== room.landlordSeat;
   const lastIsFarmer = lastSeat !== room.landlordSeat;
+  const teammate = iAmFarmer && lastIsFarmer && lastSeat !== seat;
 
-  const normal = genBeat(p.hand, last, oppMin <= 1);
+  // ---- 能一手出完：直接出（含整手炸弹/王炸）----
+  const winMove = findWinningMove(p.hand, last);
+  if (winMove) return { action: 'play', ids: winMove };
 
-  // 队友出牌：默认过，除非特殊情况
-  if (iAmFarmer && lastIsFarmer && lastSeat !== seat) {
-    if (normal && normal.length === p.hand.length) {
-      room.curSeat = seat;
-      return { action: 'play', ids: normal };
-    }
-    // 地主危险（≤2张）且我能用小牌（≤Q且非炸弹）压住队友抢牌权
-    if (normal) {
-      const ll = room.players.find(pl => pl.seat === room.landlordSeat);
-      const landlordDanger = ll && ll.hand.length <= 2;
-      const bc = comboOfIds(p.hand, normal);
-      if (landlordDanger && bc && bc.type !== 'bomb' && bc.type !== 'rocket' && bc.rank <= 12) {
-        room.curSeat = seat;
-        return { action: 'play', ids: normal };
-      }
-    }
+  // ---- 跟对手（地主）：能压就压最小牌；必要时炸 ----
+  if (!teammate) {
+    const normal = genBeat(p.hand, last, false);
+    if (normal && tryPlay(p, normal, last)) return { action: 'play', ids: normal };
+    const bomb = considerBomb(p.hand, last, lastSeat, room, false);
+    if (bomb && tryPlay(p, bomb, last)) return { action: 'play', ids: bomb };
     return { action: 'pass' };
   }
 
-  // 对手出牌：正常跟
-  if (normal) {
-    room.curSeat = seat;
-    return { action: 'play', ids: normal };
+  // ---- 跟队友：默认不抢（把牌权留给队友）；仅地主即将获胜时用大牌夺回牌权 ----
+  const ll = room.players.find(pl => pl.seat === room.landlordSeat);
+  const landlordDanger = ll && ll.hand.length <= 2;
+  if (landlordDanger) {
+    // 用偏大牌（2/王炸）夺回牌权，地主多半压不住；不为小牌浪费
+    const strong = genBeat(p.hand, last, true);
+    if (strong) {
+      const bc = comboOfIds(p.hand, strong);
+      if ((bc.type === 'bomb' || bc.type === 'rocket' || bc.rank >= 15) && tryPlay(p, strong, last))
+        return { action: 'play', ids: strong };
+    }
+    const bomb = considerBomb(p.hand, last, lastSeat, room, true);
+    if (bomb && tryPlay(p, bomb, last)) return { action: 'play', ids: bomb };
   }
-
-  // 无同型可压 → 考虑炸
-  const { byV, list, rocket } = bombsOf(p.hand);
-  const oppClose = room.players.find(pl => pl.seat === lastSeat)
-    && room.players.find(pl => pl.seat === lastSeat).hand.length <= 2;
-
-  if (last.type === 'rocket') return { action: 'pass' };
-
-  // 炸弹互压：只有对方快走完才跟
-  if (last.type === 'bomb') {
-    const bigger = list.find(v => v > last.rank);
-    if (bigger !== undefined && oppClose) {
-      room.curSeat = seat;
-      return { action: 'play', ids: byV[bigger].map(c => c.id) };
-    }
-    if (rocket && oppClose) {
-      room.curSeat = seat;
-      return { action: 'play', ids: rocket };
-    }
-    return { action: 'pass' };
-  }
-
-  // 对手快走完才舍炸；自己快走完且炸完能一手出完则果断炸
-  if (oppClose && !(iAmFarmer && lastIsFarmer)) {
-    if (list.length) {
-      room.curSeat = seat;
-      return { action: 'play', ids: byV[list[0]].map(c => c.id) };
-    }
-    if (rocket) {
-      room.curSeat = seat;
-      return { action: 'play', ids: rocket };
-    }
-  }
-
-  // 自己手牌少且炸弹能开路 → 果断炸
-  if (p.hand.length <= 8 && !(iAmFarmer && lastIsFarmer)) {
-    if (list.length && comboOfIds(p.hand, byV[list[0]].map(c => c.id))) {
-      room.curSeat = seat;
-      return { action: 'play', ids: byV[list[0]].map(c => c.id) };
-    }
-  }
-
+  // 否则不抢队友，把牌权留给队友
   return { action: 'pass' };
 }
 
