@@ -46,6 +46,13 @@ function processApi({ room, route, q, body, deps }) {
     if (route === 'join') {
       let p = body.playerId && findPlayer(body.playerId);
       if (!p) {
+        // 防残留：满员时清理掉线超 60s 的非机器人玩家，避免反复进房留下幽灵导致无法进入
+        if (room.players.length >= 3) {
+          const stale = room.players
+            .filter(x => !x.isBot && (now - (x.lastSeen || 0) > 60000))
+            .sort((a, b) => (a.lastSeen || 0) - (b.lastSeen || 0));
+          if (stale.length) room.players = room.players.filter(x => x.id !== stale[0].id);
+        }
         if (room.players.length >= 3) return err({ err: '房间已满（3人）' });
         if (room.players.length === 0 && room.phase === 'lobby' && body.rounds) {
           room.totalRounds = Math.max(1, Math.min(20, body.rounds | 0));

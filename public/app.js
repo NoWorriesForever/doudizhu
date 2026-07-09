@@ -24,6 +24,7 @@ let joinStatusTimer = null; // 申请状态轮询
 let lastPushAt = 0;          // 最近一次收到 SSE 推送的时间（判断 SSE 是否健康）
 let pollTimer = null;       // 状态轮询兜底（隧道下 SSE 可能被缓冲/延迟）
 let consecutiveBad = 0;     // 连续拉不到有效状态计数（判定已离开房间）
+let joinGraceUntil = 0;      // 进房宽限期截止时间（冷启动/时序期间不判离场）
 
 // ---- 工具 ----
 
@@ -110,19 +111,21 @@ function stopStatePolling() {
 }
 async function pollState() {
   if (!playerId || !roomId) return;
-  if (lastPushAt && Date.now() - lastPushAt < 600) return; // SSE 刚推送过，跳过一次避免重复渲染
+  if (lastPushAt && Date.now() - lastPushAt < 600) return; // WS 刚推送过，跳过一次避免重复渲染
+  // 进房宽限期内（DO 冷启动/首屏时序），或 WS 已正常推送过，都不判“已离开房间”，只用轮询兜底渲染
+  const protectedNow = Date.now() < joinGraceUntil || lastPushAt > 0;
   try {
     const st = await get('state', { roomId, playerId });
     if (st && st.mySeat >= 0) {
       consecutiveBad = 0;
       $('netbar').classList.add('hide');
       render(st);
-    } else if (++consecutiveBad >= 3) {
+    } else if (!protectedNow && ++consecutiveBad >= 3) {
       stopStatePolling();
       showJoinForm('你已不在该房间，请重新加入');
     }
   } catch (e) {
-    if (++consecutiveBad >= 3) { stopStatePolling(); showJoinForm('连接已断开，请重新加入'); }
+    if (!protectedNow && ++consecutiveBad >= 3) { stopStatePolling(); showJoinForm('连接已断开，请重新加入'); }
   }
 }
 
@@ -722,6 +725,7 @@ function enterRoom(pid, rid) {
   stopRoomsPolling();
   consecutiveBad = 0;
   lastPushAt = 0;
+  joinGraceUntil = Date.now() + 6000; // 进房后 6 秒内不判“已离开房间”，规避 DO 冷启动/首屏时序误踢
   $('lobbyInfo').classList.remove('hide');
   updateLobbyChrome();
   startStatePolling(); // 立即拉一次状态 + 每 2s 兜底（隧道下 SSE 可能延迟）
