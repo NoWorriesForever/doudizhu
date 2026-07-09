@@ -112,20 +112,21 @@ function stopStatePolling() {
 async function pollState() {
   if (!playerId || !roomId) return;
   if (lastPushAt && Date.now() - lastPushAt < 600) return; // WS 刚推送过，跳过一次避免重复渲染
-  // 进房宽限期内（DO 冷启动/首屏时序），或 WS 已正常推送过，都不判“已离开房间”，只用轮询兜底渲染
-  const protectedNow = Date.now() < joinGraceUntil || lastPushAt > 0;
+  // 仅“刚加入的 6 秒宽限”内容忍暂时拿不到身份（DO 冷启动/首屏时序保险）；
+  // 宽限过后仍 mySeat<0 = 确实不在房间（如本机存了过期会话/被移除）→ 退回大厅重进，避免永久假死。
+  const inGrace = Date.now() < joinGraceUntil;
   try {
     const st = await get('state', { roomId, playerId });
     if (st && st.mySeat >= 0) {
       consecutiveBad = 0;
       $('netbar').classList.add('hide');
       render(st);
-    } else if (!protectedNow && ++consecutiveBad >= 3) {
+    } else if (!inGrace && ++consecutiveBad >= 2) {
       stopStatePolling();
       showJoinForm('你已不在该房间，请重新加入');
     }
   } catch (e) {
-    if (!protectedNow && ++consecutiveBad >= 3) { stopStatePolling(); showJoinForm('连接已断开，请重新加入'); }
+    if (!inGrace && ++consecutiveBad >= 2) { stopStatePolling(); showJoinForm('连接已断开，请重新加入'); }
   }
 }
 
@@ -295,8 +296,13 @@ function renderSeats(st) {
     const info = st.seats[s];
     const div = box.children[idx] || document.createElement('div');
     if (!div.parentNode) box.appendChild(div);
-
     div.dataset.seat = s;
+
+    if (!info) {            // 防御：座位数据缺失时清空该格，避免抛异常卡死整页
+      div.className = 'seat';
+      div.innerHTML = '';
+      continue;
+    }
     div.className = 'seat' +
       (((st.phase === 'playing' && st.curSeat === s) || (st.phase === 'bidding' && st.bidSeat === s)) ? ' active' : '');
 

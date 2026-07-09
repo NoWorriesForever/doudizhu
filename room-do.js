@@ -33,7 +33,13 @@ export class Room {
 
   async fetch(request) {
     const url = new URL(request.url);
-    const roomId = url.searchParams.get('roomId') || 'default';
+    let roomId = url.searchParams.get('roomId');
+    // 前端把 roomId 放在 POST body 里（join/addbot/play…），必须和 query 参数都兼容，
+    // 否则会全部落入 'default' 实例，导致进房后状态错乱、页面假死。
+    if (!roomId && request.method === 'POST') {
+      try { const b = await request.clone().json(); roomId = b && b.roomId; } catch (e) {}
+    }
+    roomId = (roomId || 'default').toString();
 
     // 懒加载房间（优先从存储恢复）
     if (!this.room) {
