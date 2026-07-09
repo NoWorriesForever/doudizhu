@@ -207,9 +207,13 @@ function render(st) {
     };
     const list = st.seats.filter(Boolean).map(s => {
       const meMark = s.seat === st.mySeat ? ' （你）' : '';
-      return '<div style="padding:4px 0">座位' + s.seat + '：' + s.name + meMark + (s.isBot ? '（机器人）' : '') + '</div>';
+      const rdy = s.ready ? '<span class="rdy">已准备✓</span>' : '';
+      return '<div style="padding:4px 0">座位' + s.seat + '：' + s.name + meMark + (s.isBot ? '（机器人）' : '') + rdy + '</div>';
     }).join('');
-    $('seatList').innerHTML = list + '<div style="opacity:.7;font-size:.8rem;margin-top:6px">' + st.playerCount + '/3 人 · 准备人数：' + (st.readyCount || 0) + '/3</div>';
+    $('seatList').innerHTML = list;
+    const rc = $('readyCount');
+    rc.innerHTML = '准备人数：<b>' + (st.readyCount || 0) + '</b>/3 · 共 ' + st.playerCount + '/3 人';
+    rc.classList.toggle('full', (st.readyCount || 0) >= 3);
     $('readyBtn').textContent = st.myReady ? '取消准备' : '准备';
     renderHostRequests(st);
     return;
@@ -602,7 +606,8 @@ $('bidBox').addEventListener('click', async (e) => {
 function fmtScore(n) { n = n || 0; return (n > 0 ? '+' : '') + n; }
 
 function readyCountHtml(st) {
-  return '<div class="readycount">准备人数：' + (st.readyCount || 0) + '/3</div>';
+  const full = (st.readyCount || 0) >= 3 ? ' full' : '';
+  return '<div class="readycount' + full + '">准备人数：<b>' + (st.readyCount || 0) + '</b>/3</div>';
 }
 function onReadyNext() {
   post('ready', { roomId, playerId });

@@ -19,7 +19,7 @@ function viewFor(room, playerId) {
     if (!p) return null;
     const conn = roomModule.isConnected(p, now);
     return {
-      seat: s, name: p.name, isBot: p.isBot,
+      seat: s, name: p.name, isBot: p.isBot, ready: !!p.ready,
       handCount: p.hand.length,
       score: p.score || 0,
       isLandlord: room.landlordSeat === s,
