@@ -158,7 +158,30 @@ function cardEl(c, mini) {
   return d;
 }
 
+// 新建一张牌节点（不进 cardCache）：供底牌/出牌区/亮牌区使用，
+// 避免与手牌区因同一 card id 共享同一 DOM 节点而被互相“拽走”导致闪烁。
+function freshCardEl(c, mini) {
+  const isJoker = c.v >= 16;
+  const red = isJoker ? (c.v === 17) : (c.suit === 1 || c.suit === 3);
+  const d = document.createElement('div');
+  d.className = 'card' + (mini ? ' mini' : '') + (isJoker ? ' jk' : '') + (red ? ' red' : '');
+  if (isJoker) {
+    d.innerHTML = '<span class="v">' + (c.v === 17 ? '大王' : '小王') + '</span>';
+  } else {
+    d.innerHTML = '<span class="v">' + c.label + '</span><span class="s">' + SUIT[c.suit] + '</span>';
+  }
+  return d;
+}
+function makeCardBack() {
+  const d = document.createElement('div');
+  d.className = 'backcard';
+  return d;
+}
+
 // ---- 渲染 ----
+
+let lastRoundNo = -1;          // 上一局局号，用于换局时清空残留选牌
+let lastBottomSig = '';        // 底牌签名，静止重建避免闪烁
 
 function render(st) {
   if (st.mySeat < 0) return;
@@ -192,6 +215,11 @@ function render(st) {
   lastVersion = st.version;
   mySeat = st.mySeat;
   lastState = st;
+
+  // 换局或离开对局阶段时，清空上一局残留的选牌
+  // （同一副牌 card id 是确定性的，新一局若不清空，旧 id 仍会“预选中”导致误报“不是合法牌型”）
+  if (st.roundNo !== lastRoundNo) { selected.clear(); lastRoundNo = st.roundNo; }
+  if (st.phase !== 'playing') selected.clear();
 
   const myInfo = st.seats[st.mySeat] || {};
   const multTag = (st.landlordSeat >= 0 && st.callMult > 1)
@@ -301,6 +329,8 @@ function renderSeats(st) {
     if (!info) {            // 防御：座位数据缺失时清空该格，避免抛异常卡死整页
       div.className = 'seat';
       div.innerHTML = '';
+      div.dataset.hc = '';
+      div.dataset.built = '';
       continue;
     }
     div.className = 'seat' +
@@ -313,10 +343,16 @@ function renderSeats(st) {
       conn = info.hosting ? ' <span class="offtag">托管中</span>' : ' <span class="offtag">掉线</span>';
     }
 
-    div.innerHTML = '<div class="nm">' + info.name + (info.isBot ? '' : '') +
-      ' <span class="sc">' + fmtScore(info.score || 0) + '</span>' + conn + '</div>' +
-      '<div class="role">' + role + '</div>' +
-      '<div class="seat-timer"></div>';
+    // 结构只建一次（首建/上一局残留），后续只更新文本与背面牌堆，避免每 500ms 轮询整块重建导致闪烁
+    if (!div.dataset.built) {
+      div.innerHTML = '<div class="nm"></div><div class="role"></div>' +
+        '<div class="seat-timer"></div><div class="backcards"></div><div class="cnt"></div>';
+      div.dataset.built = '1';
+      div.dataset.hc = '';
+    }
+    div.querySelector('.nm').innerHTML = info.name +
+      ' <span class="sc">' + fmtScore(info.score || 0) + '</span>' + conn;
+    div.querySelector('.role').innerHTML = role;
 
     if (revealing && info.hand) {
       const hd = document.createElement('div');
@@ -324,21 +360,23 @@ function renderSeats(st) {
       if (info.hand.length === 0) {
         hd.innerHTML = '<span style="font-size:.75rem;opacity:.85">已出完</span>';
       } else {
-        info.hand.forEach(c => hd.appendChild(cardEl(c, true)));
+        info.hand.forEach(c => hd.appendChild(freshCardEl(c, true)));
       }
-      div.appendChild(hd);
+      const bc = div.querySelector('.backcards');
+      bc.innerHTML = '';
+      bc.appendChild(hd);
+      div.querySelector('.cnt').textContent = info.hand.length + ' 张';
+      div.dataset.hc = String(info.hand.length);
     } else {
-      let backs = '';
-      for (let i = 0; i < Math.min(info.handCount, 20); i++)
-        backs += '<div class="backcard"></div>';
-      const bc = document.createElement('div');
-      bc.className = 'backcards';
-      bc.innerHTML = backs;
-      div.appendChild(bc);
-      const cnt = document.createElement('div');
-      cnt.className = 'cnt';
-      cnt.textContent = info.handCount + ' 张';
-      div.appendChild(cnt);
+      // 手牌数变化时才重建背面牌堆（背面牌本身无状态，没必要每轮询重绘 → 计数不闪）
+      const hc = info.handCount;
+      if (div.dataset.hc !== String(hc)) {
+        const bc = div.querySelector('.backcards');
+        bc.innerHTML = '';
+        for (let i = 0; i < Math.min(hc, 20); i++) bc.appendChild(makeCardBack());
+        div.querySelector('.cnt').textContent = hc + ' 张';
+        div.dataset.hc = String(hc);
+      }
     }
   }
 }
@@ -346,14 +384,20 @@ function renderSeats(st) {
 // ---- 底牌 ----
 
 function renderBottom(st) {
-  const bb = $('bottomBox');
-  bb.innerHTML = '';
   if (st.bottom && st.bottom.length && st.landlordSeat >= 0) {
+    const sig = st.bottom.map(c => c.id).join(',');
+    if (sig === lastBottomSig) return;     // 底牌内容不变 → 跳过重建（杜绝闪烁）
+    lastBottomSig = sig;
+    const bb = $('bottomBox');
+    bb.innerHTML = '';
     const tag = document.createElement('span');
     tag.className = 'tag';
     tag.textContent = '底牌';
     bb.appendChild(tag);
-    st.bottom.forEach(c => bb.appendChild(cardEl(c, true)));
+    st.bottom.forEach(c => bb.appendChild(freshCardEl(c, true)));
+  } else if (lastBottomSig !== '') {
+    lastBottomSig = '';
+    $('bottomBox').innerHTML = '';
   }
 }
 
@@ -384,7 +428,7 @@ function renderPlayed(st) {
     lbl.className = 'lbl';
     lbl.textContent = (who ? who.name : '') + ' 出：';
     pb.appendChild(lbl);
-    st.lastPlay.cards.forEach(c => pb.appendChild(cardEl(c, true)));
+    st.lastPlay.cards.forEach(c => pb.appendChild(freshCardEl(c, true)));
 
     const sig = st.lastPlay.seat + '|' + st.lastPlay.cards.map(c => c.id).join(',');
     if (sig !== prevPlaySig) {
@@ -441,8 +485,9 @@ function renderMyHand(st) {
   const h = $('myhand');
   const cards = st.myHand || [];
 
-  // 移除不存在的旧元素
+  // 移除不存在的旧元素（同时剔除已不在手牌中的残留选中，避免误报非法牌型）
   const currentIds = new Set(cards.map(c => c.id));
+  for (const id of [...selected]) if (!currentIds.has(id)) selected.delete(id);
   for (const child of [...h.children]) {
     if (!currentIds.has(child.dataset.cid)) {
       cardCache.delete(child.dataset.cid);
@@ -729,6 +774,8 @@ function enterRoom(pid, rid) {
   localStorage.setItem('ddz_pid', playerId);
   localStorage.setItem('ddz_room', roomId);
   stopRoomsPolling();
+  lastRoundNo = -1;        // 重置：进入新房间首帧强制清残留选牌 + 重画底牌
+  lastBottomSig = '';
   consecutiveBad = 0;
   lastPushAt = 0;
   joinGraceUntil = Date.now() + 6000; // 进房后 6 秒内不判“已离开房间”，规避 DO 冷启动/首屏时序误踢
