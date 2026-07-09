@@ -48,7 +48,7 @@ function viewFor(room, playerId) {
     totalRounds: room.totalRounds,
     roundNo: room.roundNo,
     matchOver: room.phase === 'finished' && room.roundNo >= room.totalRounds,
-    bottom: (room.phase === 'playing' || revealing) ? room.bottom : [],
+    bottom: (room.phase === 'playing' || room.phase === 'reveal') ? room.bottom : [],
     bidSeat: room.bidSeat,
     curSeat: room.curSeat,
     lastPlay: room.lastPlay ? { seat: room.lastPlay.seat, cards: room.lastPlay.cards } : null,

@@ -787,6 +787,7 @@ function enterRoom(pid, rid) {
 
 // 退回大厅表单（清空凭据、显示输入框、刷新房间列表）
 function showJoinForm(msg) {
+  $('confirmModal') && $('confirmModal').classList.add('hide');
   clearTimeout(reconnectTimer);
   stopStatePolling();
   if (ws) { ws.close(); ws = null; }
@@ -822,7 +823,14 @@ $('exitLobbyBtn').onclick = async () => {
   showJoinForm();
 };
 $('leaveBtn').onclick = () => {
-  showJoinForm(); // 统一走退回大厅逻辑：关 SSE、通知服务器移除自己、隐藏牌桌
+  $('confirmModal').classList.remove('hide'); // 先弹确认框，避免误触退出
+};
+$('confirmCancel').onclick = () => {
+  $('confirmModal').classList.add('hide');
+};
+$('confirmYes').onclick = () => {
+  $('confirmModal').classList.add('hide');
+  showJoinForm(); // 统一走退回大厅逻辑：关 WS、通知服务器移除自己、隐藏牌桌
 };
 
 // ---- 大厅房间浏览 + 加入申请 ----

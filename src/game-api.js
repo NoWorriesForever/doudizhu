@@ -36,6 +36,16 @@ function processApi({ room, route, q, body, deps }) {
         room.hostId = humans.length ? humans[0].id : null;
       }
       room.players = room.players.filter(x => x.id !== body.playerId);
+      // 离开后若房间内仅剩机器人（或已空），自动清空房间：移除所有机器人并重置为干净大厅。
+      // DO 实例保留可复用，下次有人进该房间即全新开始（不删除实例，避免房间号失效）。
+      const humansLeft = room.players.filter(x => !x.isBot);
+      if (humansLeft.length === 0) {
+        room.players = [];
+        room.hostId = null;
+        roomModule.resetToLobby(room);
+        broadcast(room);
+        return ok({ ok: true });
+      }
       const result = roomModule.reseatAndReset(room);
       if (!result) { room.__shouldDelete = true; }
       broadcast(room);

@@ -17,13 +17,12 @@ function createRoom(id) {
     bidSeat: -1,
     calledSeat: -1,
     callMult: 1,
-    bidActed: 0,
     bidRound: 'call',        // 'call' | 'grab'
-    grabCandidates: [],
     firstCallerSeat: -1,
-    lastGrabber: -1,
-    grabCount: 0,
-    callerCounterUsed: false,
+    lastCaller: -1,          // 最近一次叫/抢地主者（地主候选人），最后叫者得地主
+    bidSlots: [],            // 前 3 个叫抢座位 [A,B,C]
+    bidPtr: 0,               // 当前轮到 bidSlots 的第几个
+    passedSeats: [],         // 已“不叫/不抢”而失去叫抢资格的座位
     curSeat: -1,
     lastPlay: null,
     passes: 0,
@@ -93,13 +92,12 @@ function resetToLobby(room) {
   room.bidSeat = -1;
   room.calledSeat = -1;
   room.callMult = 1;
-  room.bidActed = 0;
   room.bidRound = 'call';
-  room.grabCandidates = [];
   room.firstCallerSeat = -1;
-  room.lastGrabber = -1;
-  room.grabCount = 0;
-  room.callerCounterUsed = false;
+  room.lastCaller = -1;
+  room.bidSlots = [];
+  room.bidPtr = 0;
+  room.passedSeats = [];
   room.curSeat = -1;
   room.lastPlay = null;
   room.passes = 0;
@@ -140,9 +138,12 @@ function reseatAndReset(room) {
 
 // ---- 发牌 ----
 
-function startDeal(room) {
+function startDeal(room, opts) {
   const { buildDeck, shuffle, sortHand } = require('./cards');
-  room.roundNo = (room.roundNo || 0) + 1;
+  // 流局重发时 count:false，不计入总局数
+  if (!opts || opts.count !== false) {
+    room.roundNo = (room.roundNo || 0) + 1;
+  }
   room.seenCards = {};
   room.playLog = [];
   room.bombCount = 0;
@@ -157,16 +158,16 @@ function startDeal(room) {
 
   room.phase = 'bidding';
   room.firstBidder = Math.floor(Math.random() * 3);
-  room.bidSeat = room.firstBidder;
+  const A = room.firstBidder;
+  room.bidSlots = [A, (A + 1) % 3, (A + 2) % 3]; // 前 3 轮：A→B→C
+  room.bidPtr = 1; // 第 1 轮已取 bidSlots[0]，故下一次推进从下标 1 开始
+  room.bidSeat = room.bidSlots[0];
   room.bidRound = 'call';
   room.calledSeat = -1;
   room.firstCallerSeat = -1;
-  room.lastGrabber = -1;
-  room.grabCount = 0;
-  room.callerCounterUsed = false;
+  room.lastCaller = -1;
+  room.passedSeats = [];
   room.callMult = 1;
-  room.bidActed = 0;
-  room.grabCandidates = [];
   room.landlordSeat = -1;
   room.lastPlay = null;
   room.passes = 0;
@@ -178,60 +179,70 @@ function startDeal(room) {
 }
 
 // ---- 叫/抢地主 ----
+// 规则（顺时针，最多 4 轮）：
+//   1) 随机首位 A，顺序 A→B→C→A；若 A 不叫则失去资格，末尾回到的改为 B（即 B→C→B）。
+//   2) 每名玩家“不叫/不抢”即失去后续叫抢资格。
+//   3) 一旦有人叫过，后续环节变为“抢地主”；最近一次叫/抢者即地主候选人，最后叫者当选。
+//   4) 仅剩一名叫地主者且其余皆已不叫 → 该玩家直接当选（如 A 叫、B/C 不叫 → A 当选；A/B 不叫、C 叫 → C 直接当选）。
+//   5) 三人都不叫 → 流局，不计入总局数，重新发牌。
+
+function nextBidSeat(room) {
+  if (room.bidPtr < 3) {
+    const s = room.bidSlots[room.bidPtr];
+    room.bidPtr++;
+    return s;
+  }
+  if (room.bidPtr === 3) {
+    room.bidPtr++;
+    const A = room.firstBidder;
+    // 第 4 轮：A 仍在场则回到 A，否则顺延到 B
+    return room.passedSeats.includes(A) ? (A + 1) % 3 : A;
+  }
+  return -1; // 已无回合
+}
+
+function finishBid(room) {
+  if (room.lastCaller >= 0) {
+    assignLandlord(room, room.lastCaller);
+  } else {
+    // 三家都不叫 → 流局，不计入总局数，重新发牌
+    bump(room, '三家都不叫，本场流局，重新发牌…');
+    startDeal(room, { count: false });
+  }
+}
 
 function doBid(room, seat, action) {
   if (room.phase !== 'bidding' || room.bidSeat !== seat) return { err: '现在不是你' };
   const name = playerBySeat(room, seat).name;
+  const isCall = (action === 'call' || action === 'grab');
+  const isGrab = room.lastCaller >= 0; // 已有人叫过 → 抢地主阶段
 
-  if (room.bidRound === 'call') {
-    if (action === 'call') {
-      room.calledSeat = seat;
-      room.firstCallerSeat = seat;
-      room.callMult *= 2;
-      room.grabCount = 0;
-      room.lastGrabber = -1;
-      room.callerCounterUsed = false;
-      room.bidRound = 'grab';
-      room.grabCandidates = [(seat + 1) % 3, (seat + 2) % 3];
-      room.bidSeat = room.grabCandidates.shift();
-      bump(room, `${name} 叫地主！轮到 ${playerBySeat(room, room.bidSeat).name} 抢地主`);
-      return {};
-    }
-    room.bidActed++;
-    if (room.bidActed >= 3) {
-      bump(room, '三家都不叫，重新发牌…');
-      startDeal(room);
-      return {};
-    }
-    room.bidSeat = (room.bidSeat + 1) % 3;
-    bump(room, `${name} 不叫，轮到 ${playerBySeat(room, room.bidSeat).name} 叫地主`);
-    return {};
-  }
-
-  // grab 阶段
-  const firstCaller = room.firstCallerSeat;
-  if (action === 'grab') {
+  if (isCall) {
+    const firstCall = room.lastCaller < 0;
+    room.lastCaller = seat;
     room.callMult *= 2;
-    room.grabCount = (room.grabCount || 0) + 1;
-    room.lastGrabber = seat;
-    bump(room, `${name} 抢地主！倍数升至 ${room.callMult}`);
-    if (seat !== firstCaller && !room.callerCounterUsed && room.grabCount < 3) {
-      room.callerCounterUsed = true;
-      room.grabCandidates.unshift(firstCaller);
+    if (firstCall) {
+      room.firstCallerSeat = seat;
+      room.calledSeat = seat;
     }
+    bump(room, `${name} ${isGrab ? '抢地主' : '叫地主'}！倍数升至 ${room.callMult}`);
   } else {
-    bump(room, `${name} 不抢`);
+    room.passedSeats.push(seat);
+    bump(room, `${name} ${isGrab ? '不抢' : '不叫'}`);
   }
-  if (seat === firstCaller) room.callerCounterUsed = true;
 
-  if (room.grabCandidates.length > 0 && room.grabCount < 3) {
-    room.bidSeat = room.grabCandidates.shift();
-    bump(room, `轮到 ${playerBySeat(room, room.bidSeat).name} 抢地主`);
+  // 提前结束：仅剩一名叫地主者且其余皆已不叫
+  const othersAllPassed = [0, 1, 2].every(s => s === room.lastCaller || room.passedSeats.includes(s));
+  if (room.lastCaller >= 0 && othersAllPassed) {
+    assignLandlord(room, room.lastCaller);
     return {};
   }
 
-  const landlord = (room.lastGrabber >= 0) ? room.lastGrabber : firstCaller;
-  assignLandlord(room, landlord);
+  const s = nextBidSeat(room);
+  if (s < 0 || room.passedSeats.includes(s)) { finishBid(room); return {}; }
+  room.bidSeat = s;
+  room.bidRound = room.lastCaller >= 0 ? 'grab' : 'call';
+  bump(room, `轮到 ${playerBySeat(room, s).name} ${room.bidRound === 'grab' ? '抢地主' : '叫地主'}`);
   return {};
 }
 
