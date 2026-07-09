@@ -209,7 +209,7 @@ function render(st) {
       const meMark = s.seat === st.mySeat ? ' （你）' : '';
       return '<div style="padding:4px 0">座位' + s.seat + '：' + s.name + meMark + (s.isBot ? '（机器人）' : '') + '</div>';
     }).join('');
-    $('seatList').innerHTML = list + '<div style="opacity:.7;font-size:.8rem;margin-top:6px">' + st.playerCount + '/3 人</div>';
+    $('seatList').innerHTML = list + '<div style="opacity:.7;font-size:.8rem;margin-top:6px">' + st.playerCount + '/3 人 · 准备人数：' + (st.readyCount || 0) + '/3</div>';
     $('readyBtn').textContent = st.myReady ? '取消准备' : '准备';
     renderHostRequests(st);
     return;
@@ -218,6 +218,11 @@ function render(st) {
   lastVersion = st.version;
   mySeat = st.mySeat;
   lastState = st;
+
+  // 展示赢家最后一手阶段（showwin）：先不显示任何人的手牌，专注看最后一手
+  const suppressHand = st.phase === 'showwin';
+  if (suppressHand) $('myhand').classList.add('hide');
+  else $('myhand').classList.remove('hide');
 
   // 换局或离开对局阶段时，清空上一局残留的选牌
   // （同一副牌 card id 是确定性的，新一局若不清空，旧 id 仍会“预选中”导致误报“不是合法牌型”）
@@ -238,9 +243,11 @@ function render(st) {
   renderPlayed(st);
   renderBidding(st);
   renderMyMeta(st);
-  // 手牌只在“牌本身变化”时重建 DOM（避免每 800ms 轮询都重建 17+ 张牌，移动端卡顿/吞点击）
-  const newHandSig = (st.myHand || []).map(c => c.id).join(',');
-  if (newHandSig !== handSig) { renderMyHand(st); handSig = newHandSig; }
+  // 手牌只在“牌本身变化”时重建 DOM（showwin 阶段隐藏，先专注最后一手）
+  if (!suppressHand) {
+    const newHandSig = (st.myHand || []).map(c => c.id).join(',');
+    if (newHandSig !== handSig) { renderMyHand(st); handSig = newHandSig; }
+  }
   renderActions(st);
   updateTurnTimer(st);
 
@@ -414,15 +421,43 @@ function renderBottom(st) {
 
 function renderPlayed(st) {
   const pb = $('playedBox');
-  const revealing = st.phase === 'reveal' || st.phase === 'finished';
   pb.innerHTML = '';
 
+  // 先单独展示赢家最后一手几秒（showwin 阶段）
+  if (st.phase === 'showwin') {
+    if (st.lastPlay) {
+      const who = st.seats[st.lastPlay.seat];
+      const lbl = document.createElement('div');
+      lbl.className = 'lbl';
+      lbl.textContent = (who ? who.name : '') + ' 出完了！';
+      pb.appendChild(lbl);
+      st.lastPlay.cards.forEach(c => pb.appendChild(freshCardEl(c, true)));
+    }
+    const tip = document.createElement('div');
+    tip.className = 'reveal-tip';
+    tip.textContent = '稍后亮牌，查看各家余牌…';
+    pb.appendChild(tip);
+    return;
+  }
+
+  const revealing = st.phase === 'reveal' || st.phase === 'finished';
   if (revealing) {
     const tip = document.createElement('div');
     tip.className = 'reveal-tip';
     tip.textContent = st.phase === 'reveal' ? '亮牌！查看各家余牌，即将结算…' : '本局结束';
     pb.appendChild(tip);
-  } else if (st.lastPlay) {
+    if (st.lastPlay) {
+      const who = st.seats[st.lastPlay.seat];
+      const lbl = document.createElement('div');
+      lbl.className = 'lbl';
+      lbl.textContent = (who ? who.name : '') + ' 的最后一手：';
+      pb.appendChild(lbl);
+      st.lastPlay.cards.forEach(c => pb.appendChild(freshCardEl(c, true)));
+    }
+    return;
+  }
+
+  if (st.lastPlay) {
     const who = st.seats[st.lastPlay.seat];
     const lbl = document.createElement('div');
     lbl.className = 'lbl';
@@ -477,6 +512,8 @@ function renderMyMeta(st) {
   } else if (st.phase === 'bidding' && myInfo.bidAction) {
     // 叫地主阶段：在自己的信息条显示我是否叫/抢/不叫
     mm.innerHTML = '<span class="badge bid-badge b-' + myInfo.bidAction + '">' + BID_LABEL[myInfo.bidAction] + '</span>';
+  } else if (st.phase === 'showwin') {
+    mm.innerHTML = '<span class="badge">本局结束，等待亮牌…</span>';
   } else {
     mm.innerHTML = '';
   }
@@ -564,6 +601,13 @@ $('bidBox').addEventListener('click', async (e) => {
 
 function fmtScore(n) { n = n || 0; return (n > 0 ? '+' : '') + n; }
 
+function readyCountHtml(st) {
+  return '<div class="readycount">准备人数：' + (st.readyCount || 0) + '/3</div>';
+}
+function onReadyNext() {
+  post('ready', { roomId, playerId });
+}
+
 function showBanner(st) {
   $('banner').classList.remove('hide');
   const iWin = (st.winnerSide === 'landlord' && st.mySeat === st.landlordSeat) ||
@@ -584,11 +628,8 @@ function showBanner(st) {
     });
     html += '</div>';
     html += '<div style="opacity:.6;font-size:.8rem;margin-top:8px">末局：' + (st.winnerSide === 'landlord' ? '地主获胜' : '农民获胜') + '</div>';
-    $('bannerSub').innerHTML = html;
-    setBannerBtn('再开一轮', async () => {
-      await post('newmatch', { roomId, playerId });
-      $('banner').classList.add('hide');
-    });
+    $('bannerSub').innerHTML = html + readyCountHtml(st);
+    setBannerBtn(st.myReady ? '已准备 ✓' : '准备新一轮', onReadyNext);
     return;
   }
 
@@ -612,12 +653,8 @@ function showBanner(st) {
     });
     html += '</div>';
   }
-  $('bannerSub').innerHTML = html;
-  setBannerBtn('下一局', async () => {
-    const rr = await post('next', { roomId, playerId });
-    if (rr.err) toast(rr.err);
-    else $('banner').classList.add('hide');
-  });
+  $('bannerSub').innerHTML = html + readyCountHtml(st);
+  setBannerBtn(st.myReady ? '已准备 ✓' : '准备下一局', onReadyNext);
 }
 
 function setBannerBtn(txt, fn) {

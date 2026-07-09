@@ -10,7 +10,7 @@ function createRoom(id) {
   return {
     id,
     players: [],
-    phase: 'lobby',          // lobby | bidding | playing | reveal | finished
+    phase: 'lobby',          // lobby | bidding | playing | showwin | reveal | finished
     bottom: [],
     landlordSeat: -1,
     firstBidder: 0,
@@ -33,6 +33,8 @@ function createRoom(id) {
     baseScore: 1,
     bombCount: 0,
     revealAt: 0,
+    winShowAt: 0,          // 展示赢家最后一手（showwin 阶段）起始时间
+    finishedAt: 0,         // 进入结算（finished）起始时间
     lastResult: null,
     totalRounds: 3,
     roundNo: 0,
@@ -80,6 +82,10 @@ const TURN_MS = 15000;          // 每人出牌限时 15 秒
 const BOT_THINK_MS = 3000;     // 机器人思考约 3 秒
 const REQUEST_TTL_MS = 60000;  // 加入申请超时（自动拒绝）
 
+const SHOWWIN_MS = 3000;       // 展示赢家最后一手几秒后进入亮牌
+const REVEAL_MS = 4500;        // 亮牌（展示各家余牌）几秒后进入结算
+const NEXT_READY_MS = 3000;    // 结算后机器人/掉线真人自动准备下一局
+
 function isConnected(p, now) {
   return !!(p && (p.isBot || (now - (p.lastSeen || 0) < DISCONNECT_MS)));
 }
@@ -108,6 +114,8 @@ function resetToLobby(room) {
   room.winnerSide = null;
   room.bombCount = 0;
   room.revealAt = 0;
+  room.winShowAt = 0;
+  room.finishedAt = 0;
   room.lastResult = null;
   room.seenCards = {};
   room.playLog = [];
@@ -382,15 +390,35 @@ function finishGame(room, winnerSeat) {
   room.roundResults.push(resultEntry);
   room.lastResult = resultEntry;
   room.winnerSide = winnerSide;
-  room.phase = 'reveal';
-  room.revealAt = Date.now();
+  room.phase = 'showwin';
+  room.winShowAt = Date.now();
+  room.revealAt = 0;
 
   const wname = playerBySeat(room, winnerSeat).name;
+  const wrole = winnerSide === 'landlord' ? '地主' : '农民';
   let extra = spring ? '（春天！）' : (antiSpring ? '（反春天！）' : '');
-  room.message = (winnerSide === 'landlord'
-    ? `地主 ${wname} 先出完${extra}，亮牌中…`
-    : `农民 ${wname} 先出完${extra}，亮牌中…`);
+  room.message = `${wrole} ${wname} 先出完${extra}，本局结束！`;
   bump(room);
+}
+
+// ---- 三人均准备后开始（大厅发牌 / 结算后下一局 通用）----
+function tryStartAfterReady(room) {
+  if (room.players.length !== 3) return false;
+  if (!room.players.every(p => p.ready)) return false;
+  if (room.phase === 'lobby') {
+    startDeal(room);
+    return true;
+  }
+  if (room.phase === 'finished') {
+    if (room.roundNo >= room.totalRounds) {
+      resetToLobby(room);
+      for (const bp of room.players) if (bp.isBot) bp.ready = true;
+    } else {
+      startDeal(room);
+    }
+    return true;
+  }
+  return false;
 }
 
 // ---- 计分牌 ----
@@ -407,6 +435,7 @@ module.exports = {
   createRoom, bump, playerBySeat, isConnected,
   resetToLobby, reseatAndReset, startDeal,
   doBid, assignLandlord, doPlay, doPass,
-  finishGame, scoreboard,
+  finishGame, scoreboard, tryStartAfterReady,
   DISCONNECT_MS, HOST_MS, LOBBY_STALE_MS, TURN_MS, BOT_THINK_MS, REQUEST_TTL_MS,
+  SHOWWIN_MS, REVEAL_MS, NEXT_READY_MS,
 };

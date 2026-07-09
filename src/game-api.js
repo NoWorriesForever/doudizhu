@@ -170,13 +170,14 @@ function processApi({ room, route, q, body, deps }) {
       return ok({ ok: true });
     }
 
-    // ---- 准备 ----
+    // ---- 准备（大厅 / 结算后下一局 通用；三人均准备才开）----
     if (route === 'ready') {
       const p = findPlayer(body.playerId);
       if (!p) return err({ err: '未加入房间' });
+      if (room.phase !== 'lobby' && room.phase !== 'finished') return err({ err: '当前不能准备' });
       p.ready = !p.ready;
       roomModule.bump(room, `${p.name} ${p.ready ? '已准备' : '取消准备'}`);
-      if (room.players.length === 3 && room.players.every(x => x.ready)) roomModule.startDeal(room);
+      roomModule.tryStartAfterReady(room);
       broadcast(room);
       return ok({ ok: true });
     }

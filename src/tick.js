@@ -39,9 +39,22 @@ function runTick(room, deps) {
     }
   }
 
-  // 亮牌 4.5 秒后进入结算
-  if (room.phase === 'reveal' && now - room.revealAt > 4500) {
+  // 展示赢家最后一手 3 秒后 → 进入亮牌（展示各家余牌）
+  if (room.phase === 'showwin' && now - (room.winShowAt || 0) > roomModule.SHOWWIN_MS) {
+    room.phase = 'reveal';
+    room.revealAt = now;
+    const r = room.lastResult;
+    const who = r && r.winnerSide === 'landlord' ? '地主获胜！' : '农民获胜！';
+    room.message = `亮牌中：${who}`;
+    roomModule.bump(room);
+    changed = true;
+  }
+
+  // 亮牌若干秒后进入结算；清空准备状态，进入“下一局”准备门控
+  if (room.phase === 'reveal' && now - (room.revealAt || 0) > roomModule.REVEAL_MS) {
     room.phase = 'finished';
+    room.finishedAt = now;
+    room.players.forEach(p => { p.ready = false; });
     const r = room.lastResult;
     const who = r && r.winnerSide === 'landlord' ? '地主获胜！' : '农民获胜！';
     const matchOver = room.roundNo >= room.totalRounds;
@@ -50,6 +63,19 @@ function runTick(room, deps) {
       : `第 ${room.roundNo}/${room.totalRounds} 局：${who}`;
     roomModule.bump(room);
     changed = true;
+  }
+
+  // 结算后：机器人 / 掉线真人 3 秒自动准备下一局；三人全准备则自动开下一局/新一轮
+  if (room.phase === 'finished' && now - (room.finishedAt || 0) >= roomModule.NEXT_READY_MS) {
+    let autoed = false;
+    for (const p of room.players) {
+      if (!p.ready && (p.isBot || (now - (p.lastSeen || 0) > roomModule.HOST_MS))) {
+        p.ready = true;
+        autoed = true;
+      }
+    }
+    if (autoed) { roomModule.bump(room); changed = true; }
+    if (roomModule.tryStartAfterReady(room)) changed = true;
   }
 
   // 机器人思考 / 断线托管 / 在线超时

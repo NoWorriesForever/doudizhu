@@ -138,6 +138,7 @@ h1 b { color: var(--gold); }
 .scorerow .minus { color: var(--red); font-weight: 700; }
 .scorerow .tot { opacity: .6; font-size: .8rem; min-width: 56px; text-align: right; }
 .reveal-tip { background: rgba(0,0,0,.35); padding: 6px 16px; border-radius: 20px; font-size: .9rem; color: var(--gold); }
+.readycount { margin-top: 12px; font-size: 1.05rem; font-weight: 700; color: var(--gold); letter-spacing: .5px; }
 .offtag { font-size: .7rem; color: #ffd0d0; background: rgba(210,59,59,.35); border-radius: 8px; padding: 1px 6px; }
 .netbar {
   position: fixed; top: 0; left: 0; right: 0; z-index: 20; text-align: center;
