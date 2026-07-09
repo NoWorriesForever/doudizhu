@@ -5,6 +5,9 @@
 const $ = (id) => document.getElementById(id);
 const SUIT = ['♠', '♥', '♣', '♦'];
 
+// 叫/抢地主状态展示文案（座位昵称下方）
+const BID_LABEL = { call: '叫地主', grab: '抢地主', nocall: '不叫', nograb: '不抢' };
+
 let playerId = '';
 let roomId = '';
 let selected = new Set();
@@ -345,13 +348,24 @@ function renderSeats(st) {
 
     // 结构只建一次（首建/上一局残留），后续只更新文本与背面牌堆，避免每 500ms 轮询整块重建导致闪烁
     if (!div.dataset.built) {
-      div.innerHTML = '<div class="nm"></div><div class="role"></div>' +
+      div.innerHTML = '<div class="nm"></div><div class="bidtag"></div><div class="role"></div>' +
         '<div class="seat-timer"></div><div class="backcards"></div><div class="cnt"></div>';
       div.dataset.built = '1';
       div.dataset.hc = '';
     }
     div.querySelector('.nm').innerHTML = info.name +
       ' <span class="sc">' + fmtScore(info.score || 0) + '</span>' + conn;
+
+    // 叫/抢地主状态：仅叫地主阶段，在昵称下方显示该玩家是否已叫/抢/不叫
+    const bt = div.querySelector('.bidtag');
+    if (st.phase === 'bidding' && info.bidAction) {
+      bt.textContent = BID_LABEL[info.bidAction] || '';
+      bt.className = 'bidtag show b-' + info.bidAction;
+    } else {
+      bt.textContent = '';
+      bt.className = 'bidtag';
+    }
+
     div.querySelector('.role').innerHTML = role;
 
     if (revealing && info.hand) {
@@ -469,11 +483,14 @@ function renderBidding(st) {
 function renderMyMeta(st) {
   const mm = $('myMeta');
   const revealing = st.phase === 'reveal' || st.phase === 'finished';
+  const myInfo = st.seats[st.mySeat] || {};
   if (st.phase === 'playing' || revealing) {
-    const myInfo = st.seats[st.mySeat] || {};
     let myrole = myInfo.isLandlord ? '<span class="crown">地主</span>' : (st.landlordSeat >= 0 ? '农民' : '');
     mm.innerHTML = '<span class="badge">' + (myrole ? myrole + ' · ' : '') +
       '我的手牌 <span class="cn">' + (st.myHand ? st.myHand.length : 0) + '</span> 张</span>';
+  } else if (st.phase === 'bidding' && myInfo.bidAction) {
+    // 叫地主阶段：在自己的信息条显示我是否叫/抢/不叫
+    mm.innerHTML = '<span class="badge bid-badge b-' + myInfo.bidAction + '">' + BID_LABEL[myInfo.bidAction] + '</span>';
   } else {
     mm.innerHTML = '';
   }

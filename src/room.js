@@ -23,6 +23,7 @@ function createRoom(id) {
     bidSlots: [],            // 前 3 个叫抢座位 [A,B,C]
     bidPtr: 0,               // 当前轮到 bidSlots 的第几个
     passedSeats: [],         // 已“不叫/不抢”而失去叫抢资格的座位
+    bidActions: {},           // 座位 -> 'call'|'grab'|'nocall'|'nograb'（前端昵称下展示用）
     curSeat: -1,
     lastPlay: null,
     passes: 0,
@@ -98,6 +99,7 @@ function resetToLobby(room) {
   room.bidSlots = [];
   room.bidPtr = 0;
   room.passedSeats = [];
+  room.bidActions = {};
   room.curSeat = -1;
   room.lastPlay = null;
   room.passes = 0;
@@ -167,6 +169,7 @@ function startDeal(room, opts) {
   room.firstCallerSeat = -1;
   room.lastCaller = -1;
   room.passedSeats = [];
+  room.bidActions = {};
   room.callMult = 1;
   room.landlordSeat = -1;
   room.lastPlay = null;
@@ -221,6 +224,7 @@ function doBid(room, seat, action) {
     const firstCall = room.lastCaller < 0;
     room.lastCaller = seat;
     room.callMult *= 2;
+    room.bidActions[seat] = isGrab ? 'grab' : 'call';
     if (firstCall) {
       room.firstCallerSeat = seat;
       room.calledSeat = seat;
@@ -228,6 +232,7 @@ function doBid(room, seat, action) {
     bump(room, `${name} ${isGrab ? '抢地主' : '叫地主'}！倍数升至 ${room.callMult}`);
   } else {
     room.passedSeats.push(seat);
+    room.bidActions[seat] = isGrab ? 'nograb' : 'nocall';
     bump(room, `${name} ${isGrab ? '不抢' : '不叫'}`);
   }
 

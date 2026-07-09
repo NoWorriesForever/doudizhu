@@ -24,6 +24,7 @@ function viewFor(room, playerId) {
       score: p.score || 0,
       isLandlord: room.landlordSeat === s,
       isCaller: room.calledSeat === s,
+      bidAction: (room.bidActions && room.bidActions[s]) ? room.bidActions[s] : null,
       connected: conn,
       hosting: !p.isBot && !conn && s === turnSeat
         && (now - (p.lastSeen || 0) > roomModule.HOST_MS),

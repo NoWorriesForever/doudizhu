@@ -65,6 +65,27 @@ h1 b { color: var(--gold); }
 .seat .role { font-size: .72rem; margin-top: 2px; opacity: .85; }
 .crown { color: var(--gold); }
 .seat .cnt { font-size: .75rem; margin-top: 4px; opacity: .9; }
+
+/* 昵称下方：叫/抢地主状态标签 */
+.seat .bidtag { font-size: .68rem; margin-top: 3px; min-height: 0; line-height: 1.4; }
+.seat .bidtag:not(.show) { display: none; }
+.seat .bidtag.show {
+  display: inline-block; padding: 1px 7px; border-radius: 8px; font-weight: 700;
+  border: 1px solid transparent;
+}
+.seat .bidtag.b-call { color: var(--gold); background: rgba(244,196,48,.18); border-color: rgba(244,196,48,.5); }
+.seat .bidtag.b-grab { color: #ffd95e; background: rgba(244,196,48,.28); border-color: rgba(244,196,48,.7); }
+.seat .bidtag.b-nocall,
+.seat .bidtag.b-nograb { color: #c9c9c9; background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.25); }
+/* 自己信息条里的叫/抢标签 */
+.mymeta .bid-badge {
+  display: inline-block; padding: 2px 14px; border-radius: 12px; font-weight: 700;
+  border: 1px solid transparent;
+}
+.mymeta .bid-badge.b-call { color: var(--gold); background: rgba(244,196,48,.18); border-color: rgba(244,196,48,.5); }
+.mymeta .bid-badge.b-grab { color: #ffd95e; background: rgba(244,196,48,.28); border-color: rgba(244,196,48,.7); }
+.mymeta .bid-badge.b-nocall,
+.mymeta .bid-badge.b-nograb { color: #c9c9c9; background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.25); }
 .backcards { display: flex; justify-content: center; margin-top: 5px; }
 .backcard {
   width: 14px; height: 20px;
