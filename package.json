@@ -4,14 +4,17 @@
   "description": "斗地主联机模拟器 - 重构版（Cloudflare Workers + Durable Objects 部署）",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node node-server.js",
+    "start:old": "node server.js",
     "test": "node test/engine.test.js",
-    "selftest": "node server.js",
     "deploy": "wrangler deploy",
     "dry-run": "wrangler deploy --dry-run --outdir dist",
     "dev": "wrangler dev"
   },
   "license": "MIT",
+  "dependencies": {
+    "ws": "^8.21.0"
+  },
   "devDependencies": {
     "wrangler": "^3.114.17"
   }
