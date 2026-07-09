@@ -10,7 +10,7 @@ let roomId = '';
 let selected = new Set();
 let lastVersion = -1;
 let prevPlaySig = '';
-let eventSource = null;
+let ws = null;
 let reconnectTimer = null;
 let reconnectDelay = 1000;
 let turnInfo = null;       // 当前轮次倒计时信息
@@ -21,7 +21,7 @@ let handSig = '';          // 手牌签名，避免每轮询重建 DOM
 let pendingReq = null;     // {requestId, roomId, name} 自己发起的待审批申请
 let roomsTimer = null;     // 房间列表轮询
 let joinStatusTimer = null; // 申请状态轮询
-let lastSseAt = 0;          // 最近一次收到 SSE 推送的时间（判断 SSE 是否健康）
+let lastPushAt = 0;          // 最近一次收到 SSE 推送的时间（判断 SSE 是否健康）
 let pollTimer = null;       // 状态轮询兜底（隧道下 SSE 可能被缓冲/延迟）
 let consecutiveBad = 0;     // 连续拉不到有效状态计数（判定已离开房间）
 
@@ -64,36 +64,38 @@ function escapeHtml(s) {
 
 // ---- SSE 连接 ----
 
-function connectSSE() {
+function connectWS() {
   if (!playerId || !roomId) return;
-  if (eventSource) { eventSource.close(); eventSource = null; }
+  if (ws) { try { ws.close(); } catch (e) {} ws = null; }
 
   clearTimeout(reconnectTimer);
-  const url = '/api/stream?roomId=' + encodeURIComponent(roomId) + '&playerId=' + playerId;
-  eventSource = new EventSource(url);
+  const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+  const url = proto + location.host + '/ws?roomId=' + encodeURIComponent(roomId) + '&playerId=' + playerId;
+  ws = new WebSocket(url);
 
-  eventSource.onmessage = (e) => {
+  ws.onmessage = (e) => {
     try {
       const st = JSON.parse(e.data);
-      lastSseAt = Date.now();
+      lastPushAt = Date.now();
       $('netbar').classList.add('hide');
       reconnectDelay = 1000;
       render(st);
     } catch (err) {
-      console.warn('SSE parse error', err);
+      console.warn('WS parse error', err);
     }
   };
 
-  eventSource.onerror = () => {
-    // SSE 断线 → 自动重连；不再强制踢出，由 HTTP 轮询兜底保证界面可用
+  ws.onclose = () => {
+    // 断线 → 自动重连；HTTP 轮询兜底保证界面可用
     $('netbar').classList.remove('hide');
-    eventSource.close();
-    eventSource = null;
+    ws = null;
     reconnectTimer = setTimeout(() => {
       reconnectDelay = Math.min(reconnectDelay * 1.5, 10000);
-      connectSSE();
+      connectWS();
     }, reconnectDelay);
   };
+
+  ws.onerror = () => { try { ws.close(); } catch (e) {} };
 }
 
 // ---- 状态轮询兜底（隧道下 SSE 可能被缓冲/延迟，用 HTTP 拉状态保证可用）----
@@ -108,7 +110,7 @@ function stopStatePolling() {
 }
 async function pollState() {
   if (!playerId || !roomId) return;
-  if (lastSseAt && Date.now() - lastSseAt < 600) return; // SSE 刚推送过，跳过一次避免重复渲染
+  if (lastPushAt && Date.now() - lastPushAt < 600) return; // SSE 刚推送过，跳过一次避免重复渲染
   try {
     const st = await get('state', { roomId, playerId });
     if (st && st.mySeat >= 0) {
@@ -719,18 +721,18 @@ function enterRoom(pid, rid) {
   localStorage.setItem('ddz_room', roomId);
   stopRoomsPolling();
   consecutiveBad = 0;
-  lastSseAt = 0;
+  lastPushAt = 0;
   $('lobbyInfo').classList.remove('hide');
   updateLobbyChrome();
   startStatePolling(); // 立即拉一次状态 + 每 2s 兜底（隧道下 SSE 可能延迟）
-  connectSSE();        // 实时更新
+  connectWS();        // 实时更新
 }
 
 // 退回大厅表单（清空凭据、显示输入框、刷新房间列表）
 function showJoinForm(msg) {
   clearTimeout(reconnectTimer);
   stopStatePolling();
-  if (eventSource) { eventSource.close(); eventSource = null; }
+  if (ws) { ws.close(); ws = null; }
   // 尽力通知服务器移除自己，避免房间残留“幽灵玩家”导致无法开局
   if (playerId && roomId) {
     const rid = roomId, pid = playerId;
@@ -758,7 +760,7 @@ $('botBtn').onclick = async () => {
   if (r.err) toast(r.err);
 };
 $('exitLobbyBtn').onclick = async () => {
-  if (eventSource) { eventSource.close(); eventSource = null; }
+  if (ws) { ws.close(); ws = null; }
   if (playerId) { try { await post('leave', { roomId, playerId }); } catch (e) {} }
   showJoinForm();
 };
@@ -925,7 +927,7 @@ function renderHostRequests(st) {
     $('lobbyInfo').classList.remove('hide');
     updateLobbyChrome();
     startStatePolling();
-    connectSSE();
+    connectWS();
   } else {
     updateLobbyChrome();
     startRoomsPolling();

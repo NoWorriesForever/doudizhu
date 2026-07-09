@@ -74,11 +74,11 @@ function playerBySeat(room, seat) {
 
 // 连接状态
 const DISCONNECT_MS = 3500;
-const HOST_MS = Number(process.env.HOST_MS) || 6000;
+const HOST_MS = 6000;
 const LOBBY_STALE_MS = 30000;
-const TURN_MS = Number(process.env.TURN_MS) || 15000;          // 每人出牌限时 15 秒
-const BOT_THINK_MS = Number(process.env.BOT_THINK_MS) || 3000; // 机器人思考约 3 秒
-const REQUEST_TTL_MS = Number(process.env.REQUEST_TTL_MS) || 60000; // 加入申请超时（自动拒绝）
+const TURN_MS = 15000;          // 每人出牌限时 15 秒
+const BOT_THINK_MS = 3000;     // 机器人思考约 3 秒
+const REQUEST_TTL_MS = 60000;  // 加入申请超时（自动拒绝）
 
 function isConnected(p, now) {
   return !!(p && (p.isBot || (now - (p.lastSeen || 0) < DISCONNECT_MS)));

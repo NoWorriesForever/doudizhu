@@ -1,7 +1,8 @@
 'use strict';
 
 // ============================================================
-// 斗地主联机模拟器 · 入口
+// 斗地主联机模拟器 · 入口（本地 Node 版 / 兼容旧部署）
+// Cloudflare 版见 worker.js + room-do.js（共用 src/ 下纯逻辑）
 // ============================================================
 
 const http = require('http');
@@ -15,140 +16,25 @@ const rooms = new Map();
 const roomModule = require('./src/room');
 const botModule = require('./src/bot');
 const apiModule = require('./src/api');
+const { runTick } = require('./src/tick');
 
 // ---- 全局兜底：避免未捕获异常导致整个进程崩溃（所有 SSE 连接全断）----
 process.on('uncaughtException', (e) => console.error('[uncaughtException]', (e && e.stack) || e));
 process.on('unhandledRejection', (e) => console.error('[unhandledRejection]', (e && e.stack) || e));
 
 // ---- 定时任务：机器人 AI + 状态推送 + 亮牌计时 ----
-
+// runTick 由 src/tick.js 提供，server.js 与 Durable Object 共用。
 let tickSeq = 0;
 setInterval(() => {
   tickSeq++;
-  const dirty = new Set(); // 本轮状态变更的房间
-
   for (const room of rooms.values()) {
-    let changed = false;
-
-    // 清理过期连接
-    purgeStaleRoom(room);
-
-    // 清理过期的加入申请（超时自动拒绝，供申请者轮询拿到 rejected）
-    if (room.pendingRequests && room.pendingRequests.length) {
-      const now = Date.now();
-      const before = room.pendingRequests.length;
-      room.pendingRequests = room.pendingRequests.filter(r => {
-        if (now - (r.createdAt || 0) > roomModule.REQUEST_TTL_MS) {
-          room.rejectedRequests[r.requestId] = true;
-          return false;
-        }
-        return true;
-      });
-      if (room.pendingRequests.length !== before) {
-        room.rejectedRequests = room.rejectedRequests || {};
-        roomModule.bump(room);
-        changed = true;
-      }
-    }
-
-    // 亮牌 4.5 秒后进入结算
-    if (room.phase === 'reveal' && Date.now() - room.revealAt > 4500) {
-      room.phase = 'finished';
-      const r = room.lastResult;
-      const who = r && r.winnerSide === 'landlord' ? '地主获胜！' : '农民获胜！';
-      const matchOver = room.roundNo >= room.totalRounds;
-      room.message = matchOver
-        ? `最终结算：${room.totalRounds} 局打完`
-        : `第 ${room.roundNo}/${room.totalRounds} 局：${who}`;
-      roomModule.bump(room);
-      changed = true;
-    }
-
-    // 机器人思考 / 断线托管 / 在线超时
-    const curTurnSeat = room.phase === 'bidding' ? room.bidSeat
-      : (room.phase === 'playing' ? room.curSeat : -1);
-
-    if (curTurnSeat >= 0) {
-      const p = roomModule.playerBySeat(room, curTurnSeat);
-      if (p) {
-        const now = Date.now();
-        const elapsed = now - (room.turnStartAt || now);
-        const disconnected = !p.isBot && (now - (p.lastSeen || 0) > roomModule.HOST_MS);
-        try {
-          if (p.isBot) {
-            // 机器人思考约 3 秒后行动
-            if (elapsed >= roomModule.BOT_THINK_MS) {
-              if (room.phase === 'bidding') {
-                roomModule.doBid(room, curTurnSeat, botModule.botBid(room, curTurnSeat));
-              } else {
-                const move = botModule.botMove(room, curTurnSeat);
-                if (move.action === 'play') roomModule.doPlay(room, curTurnSeat, move.ids);
-                else roomModule.doPass(room, curTurnSeat);
-              }
-              changed = true;
-            }
-          } else if (disconnected) {
-            // 断线托管：立即替决策
-            if (room.phase === 'bidding') {
-              roomModule.doBid(room, curTurnSeat, botModule.botBid(room, curTurnSeat));
-            } else {
-              const move = botModule.botMove(room, curTurnSeat);
-              if (move.action === 'play') roomModule.doPlay(room, curTurnSeat, move.ids);
-              else roomModule.doPass(room, curTurnSeat);
-            }
-            changed = true;
-          } else {
-            // 在线真人：15 秒超时
-            if (elapsed >= roomModule.TURN_MS) {
-              if (room.phase === 'bidding') {
-                roomModule.doBid(room, curTurnSeat, room.bidRound === 'call' ? 'pass' : 'nograb');
-              } else if (room.lastPlay === null) {
-                // 领出超时：托管出最小牌
-                const move = botModule.botMove(room, curTurnSeat);
-                if (move.action === 'play') roomModule.doPlay(room, curTurnSeat, move.ids);
-                else if (p.hand.length) roomModule.doPlay(room, curTurnSeat, [p.hand[0].id]);
-              } else {
-                roomModule.doPass(room, curTurnSeat);
-              }
-              changed = true;
-            }
-          }
-        } catch (e) { /* 忽略单步异常 */ }
-      }
-    }
-
-    if (changed) dirty.add(room.id);
-  }
-
-  // 每 300ms 推一次 SSE 状态（避免每次 tick 都推造成刷屏）
-  // 只在房间有变更时推送
-  if (dirty.size > 0) {
-    for (const [roomId, room] of rooms) {
-      if (!dirty.has(roomId)) continue;
-      for (const p of room.players) {
-        if (!p.isBot) {
-          const sseModule = require('./src/sse');
-          sseModule.pushToPlayer(roomId, p.id, apiModule.viewFor(room, p.id));
-        }
-      }
-    }
+    runTick(room, {
+      roomModule, botModule,
+      broadcast: (r) => apiModule.broadcastRoom(r),
+      now: Date.now(),
+    });
   }
 }, Number(process.env.BOT_MS) || 500);
-
-function purgeStaleRoom(room) {
-  const now = Date.now();
-  if (room.phase === 'lobby') {
-    const before = room.players.length;
-    room.players = room.players.filter(p =>
-      p.isBot || (now - (p.lastSeen || 0) < roomModule.LOBBY_STALE_MS));
-    if (room.players.length !== before) roomModule.reseatAndReset(room);
-    return;
-  }
-  const humans = room.players.filter(p => !p.isBot);
-  if (humans.length && humans.every(p => now - (p.lastSeen || 0) > 180000)) {
-    rooms.delete(room.id);
-  }
-}
 
 // ---- HTTP 服务器 ----
 
@@ -249,7 +135,7 @@ function selftest() {
   T([3, 3, 3, 4, 4, 4, 5, 5, 6, 6], 'plane2'); // 飞机带两对，不同点数
   N([3, 3, 3, 4, 4, 4, 5, 5, 6]);              // 不应该被识别为飞机（混合对+单）
   T([3, 3, 3, 4, 4, 4, 5, 5, 5], 'plane');      // 三连三张，纯飞机
-  T([3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5], 'plane1'); // 三个四张拆为 飞机带三单
+  T([3, 3, 3, 4, 4, 4, 5, 5, 5, 5], 'plane1'); // 三个四张拆为 飞机带三单
   T([6, 6, 6, 6], 'bomb');
   N([8, 8, 8, 8, 3, 3, 3]); // 炸+3，不是合法整手
   T([16, 17], 'rocket');

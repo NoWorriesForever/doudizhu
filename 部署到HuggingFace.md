@@ -9,14 +9,21 @@
 
 ## 前提
 - 代码已在 GitHub：`https://github.com/NoWorriesForever/doudizhu`
-- 需要一个 Hugging Face 账号（免费，**不用填信用卡**，可用 GitHub 直接注册）
+- 需要一个 Hugging Face 账号（免费，**不用填信用卡**；用邮箱注册最稳，GitHub 登录入口不明显）
 
 ---
 
-## 第 1 步：注册 Hugging Face
-1. 打开 **https://huggingface.co/** ，点 **Sign Up**
-2. 可用 **GitHub** 账号直接注册登录（全程不要求信用卡）
-3. 登录后进入控制台
+## 第 1 步：注册 Hugging Face（免费 · 不绑卡）
+> Hugging Face 注册**默认是「邮箱 + 密码」表单**；GitHub 登录入口用 JS 动态加载、经常不明显（有时要等页面完全加载、或在无痕窗口才出现）。**两种都免费、都不需要信用卡**——用邮箱注册最稳，推荐直接用邮箱。
+
+**方式 A（推荐）：邮箱注册**
+1. 打开 **https://huggingface.co/join**
+2. 填 **Email 地址 + 密码**（用自己的邮箱即可），点 **Sign Up**
+3. 去邮箱收验证邮件，点里面的链接**激活账号**
+4. 激活后登录，进入控制台
+
+**方式 B：用 GitHub 登录（若想要）**
+- 打开 **https://huggingface.co/login** ，等页面**完全加载完**，到表单下方「或其他方式 / Continue with」区域找 **GitHub** 按钮（无痕窗口更容易看到）。点了会用 GitHub 授权、自动建 HF 账号，同样不绑卡。
 
 ---
 
