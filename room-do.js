@@ -10,6 +10,10 @@ import { viewFor } from './src/view.js';
 import { processApi } from './src/game-api.js';
 import { runTick } from './src/tick.js';
 
+// 真人断线（关标签页/刷新/掉线）多久后视为“僵尸”而自动清理（毫秒）。
+// 取 30s：避免游戏进行中短暂网络抖动误删；又能在关页/掉线后及时释放房间。
+const ZOMBIE_MS = 30000;
+
 function json(code, obj) {
   return new Response(JSON.stringify(obj), {
     status: code,
@@ -47,6 +51,13 @@ export class Room {
       this.room = saved || roomModule.createRoom(roomId);
       this.room.id = roomId;
     }
+
+    // 安排一次定时僵尸清理（即使无人连接，也能把“卡死满员”的房间清掉）。
+    // 仅当尚无待触发 alarm 时才排期，避免每次请求都重排。
+    try {
+      const existing = await this.state.storage.getAlarm();
+      if (!existing) await this.state.storage.setAlarm(Date.now() + ZOMBIE_MS);
+    } catch (e) {}
 
     // WebSocket 实时通道
     if (url.pathname === '/ws' && request.headers.get('Upgrade') === 'websocket') {
@@ -96,6 +107,7 @@ export class Room {
   startTick() {
     if (this.tickTimer) return;
     this.tickTimer = setInterval(() => {
+      this.cleanupZombies();
       runTick(this.room, {
         roomModule, botModule,
         broadcast: (r) => this.broadcast(r),
@@ -104,6 +116,35 @@ export class Room {
       this.persist();
       this.syncLobby();
     }, 500);
+  }
+
+  // 清理“僵尸真人”：没有活跃 WebSocket 且 lastSeen 超过阈值的非机器人玩家。
+  // 若清理后房间内已无任何真人（只剩机器人/空），则重置房间并标记删除（房间从大厅消失）。
+  cleanupZombies() {
+    if (!this.room) return;
+    const now = Date.now();
+    const live = (p) => {
+      const ws = this.sessions.get(p.id);
+      return !!(ws && ws.readyState === 1);
+    };
+    const before = this.room.players.length;
+    this.room.players = this.room.players.filter(p =>
+      p.isBot || live(p) || (now - (p.lastSeen || 0) < ZOMBIE_MS));
+
+    // 房主失效则改派给仍在场的真人
+    if (this.room.hostId && !this.room.players.some(p => p.id === this.room.hostId)) {
+      const h = this.room.players.find(p => !p.isBot);
+      this.room.hostId = h ? h.id : null;
+    }
+    // 无论人数是否变化，都要检查“是否还有真人”：仅剩机器人/空房间 → 重置并标记删除（房间消失）。
+    // 注意：不能用 before===length 提前返回，否则仅剩机器人（人数不变）时不会触发重置。
+    const humansLeft = this.room.players.filter(p => !p.isBot);
+    if (humansLeft.length === 0) {
+      this.room.players = [];
+      this.room.hostId = null;
+      roomModule.resetToLobby(this.room);
+      this.room.__shouldDelete = true;
+    }
   }
 
   stopTickIfIdle() {
@@ -173,6 +214,9 @@ export class Room {
       ? url.pathname.slice(5)
       : url.pathname.slice(1);
 
+    // 任何请求都先清理僵尸（例如对“卡死满员”房间发起加入时，先清掉掉线真人，腾出空位/从大厅移除）
+    this.cleanupZombies();
+
     let q = Object.fromEntries(url.searchParams.entries());
     let body = {};
     if (request.method === 'POST') {
@@ -209,5 +253,27 @@ export class Room {
     }
 
     return json(result.code, result.json);
+  }
+
+  // Durable Object 闹钟：即使无人连接，也会定期清理僵尸房间（解决“关页后房间卡满员”）
+  async alarm() {
+    if (!this.room) {
+      const saved = await this.state.storage.get('room');
+      this.room = saved || roomModule.createRoom('default');
+      this.room.id = this.room.id || 'default';
+    }
+    this.cleanupZombies();
+    if (this.room.__shouldDelete) {
+      this.room.__shouldDelete = false;
+      await this.state.storage.delete('room').catch(() => {});
+      await this.state.storage.deleteAlarm().catch(() => {});
+      await this.syncLobbyRemove();
+      this.room = null;            // 下次 fetch 会重新懒加载（此时存储已空）
+      return;
+    }
+    this.persist();
+    await this.syncLobby();
+    // 排期下一次清理
+    try { await this.state.storage.setAlarm(Date.now() + ZOMBIE_MS); } catch (e) {}
   }
 }

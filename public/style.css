@@ -167,11 +167,12 @@ h1 b { color: var(--gold); }
 /* 退出确认弹窗的“取消”按钮：白底弹窗里不能用透明白，改为灰底深字，保证清晰可见 */
 #confirmModal .btn { min-width: 100px; }
 #confirmModal .btn.ghost {
-  background: rgba(0,0,0,.06);
-  color: #333;
-  border: 1px solid rgba(0,0,0,.25);
+  background: #6b7280;          /* 实心中灰，白底弹窗上清晰可辨 */
+  color: #fff;
+  border: 1px solid #4b5563;
+  font-weight: 600;
 }
-#confirmModal .btn.ghost:hover { background: rgba(0,0,0,.1); }
+#confirmModal .btn.ghost:hover { background: #596069; }
 .banner .win { color: var(--red); }
 .hide { display: none !important; }
 .bidbtns { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
