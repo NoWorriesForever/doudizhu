@@ -123,8 +123,10 @@ function runTick(room, deps) {
           }
           changed = true;
         } else {
-          // 在线真人：15 秒超时
-          if (elapsed >= roomModule.TURN_MS) {
+          // 在线真人：超时托管（领出 25s，跟牌 20s）
+          const turnLimit = (room.phase === 'playing' && room.lastPlay === null)
+            ? roomModule.LEAD_MS : roomModule.TURN_MS;
+          if (elapsed >= turnLimit) {
             if (room.phase === 'bidding') {
               roomModule.doBid(room, curTurnSeat, room.bidRound === 'call' ? 'pass' : 'nograb');
             } else if (room.lastPlay === null) {

@@ -67,9 +67,10 @@ function viewFor(room, playerId) {
     // 回放日志（仅 reveal/finished 时返回）
     playLog: revealing ? room.playLog : undefined,
     seenCards: room.seenCards,
-    // 出牌倒计时
+    // 出牌倒计时：领出（含地主首出）25s，跟牌 20s；叫/抢地主阶段沿用 TURN_MS
     turnStartAt: room.turnStartAt || 0,
-    turnMs: roomModule.TURN_MS,
+    turnMs: (room.phase === 'playing' && room.lastPlay === null)
+      ? roomModule.LEAD_MS : roomModule.TURN_MS,
     botThinkMs: roomModule.BOT_THINK_MS,
   };
 }

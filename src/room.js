@@ -78,7 +78,8 @@ function playerBySeat(room, seat) {
 const DISCONNECT_MS = 3500;
 const HOST_MS = 6000;
 const LOBBY_STALE_MS = 30000;
-const TURN_MS = 15000;          // 每人出牌限时 15 秒
+const TURN_MS = 20000;          // 每人出牌/跟牌限时 20 秒
+const LEAD_MS = 25000;          // 领出（含地主拿到底牌后的首出）限时 25 秒
 const BOT_THINK_MS = 3000;     // 机器人思考约 3 秒
 const REQUEST_TTL_MS = 60000;  // 加入申请超时（自动拒绝）
 
@@ -288,6 +289,9 @@ function assignLandlord(room, seat) {
   room.curSeat = seat;
   room.lastPlay = null;
   room.passes = 0;
+  // 抢/叫地主结束 → 地主拿到底牌，倒计时必须重置为完整时长（而非继承叫抢阶段已流逝的时间）
+  room.turnStartAt = Date.now();
+  room._lastTurnSeat = seat;
   bump(room, `${lp.name} 成为地主！叫抢倍数 ${room.callMult}，底牌已亮，地主先出`);
 }
 
@@ -459,7 +463,7 @@ module.exports = {
   resetToLobby, reseatAndReset, startDeal,
   doBid, assignLandlord, doPlay, doPass,
   finishGame, scoreboard, tryStartAfterReady,
-  DISCONNECT_MS, HOST_MS, LOBBY_STALE_MS, TURN_MS, BOT_THINK_MS, REQUEST_TTL_MS,
+  DISCONNECT_MS, HOST_MS, LOBBY_STALE_MS, TURN_MS, LEAD_MS, BOT_THINK_MS, REQUEST_TTL_MS,
   SHOWWIN_MS, REVEAL_MS, NEXT_READY_MS,
   EMOTE_IDS, EMOTE_TTL_MS,
 };
