@@ -90,7 +90,27 @@ export class Room {
       this.startTick();
 
       server.addEventListener('message', (ev) => {
-        try { if (ev.data === 'ping') server.send('pong'); } catch (e) {}
+        try {
+          const msg = ev.data;
+          if (msg === 'ping') { server.send('pong'); return; }
+          let parsed;
+          try { parsed = JSON.parse(msg); } catch (e) { return; }
+          // 前端把出牌 / 叫地主等动作经 WS 发过来，省去一次穿隧道的 HTTP 往返
+          if (parsed && parsed.route) {
+            this.cleanupZombies();
+            const result = processApi({
+              room: this.room, route: parsed.route, q: parsed.q || {}, body: parsed.body || {},
+              deps: { roomModule, botModule, broadcast: (r) => this.broadcast(r), now: Date.now() },
+            });
+            // 给发起者回执（含业务错误），其余客户端由上面的 broadcast 收到新状态
+            if (parsed.reqId != null) {
+              try {
+                server.send(JSON.stringify({ reqId: parsed.reqId, res: result ? result.json : { err: 'no such api' } }));
+              } catch (e) {}
+            }
+            this.afterAction();
+          }
+        } catch (e) {}
       });
       server.addEventListener('close', () => {
         this.sessions.delete(pid);
@@ -161,6 +181,19 @@ export class Room {
       if (ws && ws.readyState === 1) {
         try { ws.send(JSON.stringify(viewFor(room, p.id))); } catch (e) {}
       }
+    }
+  }
+
+  // 动作处理收尾：房间空则删存储并从大厅移除；否则持久化 + 同步大厅索引。
+  // HTTP API 与 WS 动作通道共用，避免逻辑分叉。
+  async afterAction() {
+    if (this.room.__shouldDelete) {
+      this.room.__shouldDelete = false;
+      this.state.storage.delete('room').catch(() => {});
+      await this.syncLobbyRemove();
+    } else {
+      this.persist();
+      await this.syncLobby();
     }
   }
 
@@ -242,16 +275,7 @@ export class Room {
 
     if (!result) return json(404, { err: 'no such api' });
 
-    // 离开后若房间空，清理存储并从大厅移除
-    if (this.room.__shouldDelete) {
-      this.room.__shouldDelete = false;
-      this.state.storage.delete('room').catch(() => {});
-      await this.syncLobbyRemove();
-    } else {
-      this.persist();
-      await this.syncLobby();
-    }
-
+    await this.afterAction();
     return json(result.code, result.json);
   }
 

@@ -269,7 +269,25 @@ server.on('upgrade', (req, socket, head) => {
     startTick(entry);
 
     ws.on('message', (msg) => {
-      try { if (msg.toString() === 'ping') ws.send('pong'); } catch (e) {}
+      try {
+        const s = msg.toString();
+        if (s === 'ping') { ws.send('pong'); return; }
+        let parsed;
+        try { parsed = JSON.parse(s); } catch (e) { return; }
+        // 前端把出牌 / 叫地主等动作经 WS 发过来，省去一次 HTTP 往返
+        if (parsed && parsed.route) {
+          cleanupZombies(entry);
+          const result = processApi({
+            room: entry.room, route: parsed.route, q: parsed.q || {}, body: parsed.body || {},
+            deps: { roomModule, botModule, broadcast: () => broadcast(entry), now: Date.now() },
+          });
+          // 给发起者回执（含业务错误），其余客户端由上面的 broadcast 收到新状态
+          if (parsed.reqId != null) {
+            try { ws.send(JSON.stringify({ reqId: parsed.reqId, res: result ? result.json : { err: 'no such api' } })); } catch (e) {}
+          }
+          if (entry.room.__shouldDelete) destroyEntry(roomId);
+        }
+      } catch (e) {}
     });
     ws.on('close', () => {
       entry.sessions.delete(pid);

@@ -19,6 +19,8 @@ let prevPlaySig = '';
 let ws = null;
 let reconnectTimer = null;
 let reconnectDelay = 1000;
+const wsAcks = new Map();   // reqId -> { timer, resolve }：WS 动作回执等待
+let wsReqId = 0;
 let turnInfo = null;       // 当前轮次倒计时信息
 let countdownTimer = null; // 倒计时定时器
 let mySeat = -1;           // 我的座位号（倒计时定位用）
@@ -58,10 +60,36 @@ async function get(route, params) {
   return r.json();
 }
 
-// 发送动作。只做一次网络往返（post），界面更新交给 800ms 轮询 + SSE 兜底，
-// 这样点击“出牌/不出”只需等一次隧道往返，延迟减半、移动端更跟手。
+// 通过已建立的 WebSocket 发送动作，并等待服务端回执（reqId 关联）。
+// 服务端处理后会把新状态广播回来（render），回执则带业务错误（如非法牌型）。
+function wsSendAction(route, body) {
+  return new Promise((resolve, reject) => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return reject(new Error('ws-unavailable'));
+    const reqId = ++wsReqId;
+    const timer = setTimeout(() => {
+      if (wsAcks.has(reqId)) { wsAcks.delete(reqId); reject(new Error('ws-timeout')); }
+    }, 1200);
+    wsAcks.set(reqId, { timer, resolve });
+    try {
+      ws.send(JSON.stringify({ route, body, q: { roomId, playerId }, reqId }));
+    } catch (e) {
+      clearTimeout(timer); wsAcks.delete(reqId); reject(e);
+    }
+  });
+}
+
+// 发送动作：优先走 WebSocket（省去一次穿隧道的 HTTP 往返，明显更快、更跟手）；
+// WS 不可用或超时则回退 HTTP POST。无论哪条通道，发送后都立即拉一次状态，
+// 不等 500ms 轮询，让“出牌 / 不出 / 叫地主”的响应几乎瞬时可见。
 async function act(route, body) {
-  return await post(route, body);
+  try {
+    const r = await wsSendAction(route, body);
+    pollState();
+    return r;
+  } catch (e) { /* WS 不可用 / 超时 → 回退 HTTP */ }
+  const r = await post(route, body);
+  pollState();
+  return r;
 }
 
 function escapeHtml(s) {
@@ -107,7 +135,7 @@ function buildEmoteBar(el) {
 }
 function sendEmote(id) {
   if (!playerId || !roomId) return;
-  post('emote', { roomId, playerId, emoteId: id }).catch(() => {});
+  act('emote', { roomId, playerId, emoteId: id }).catch(() => {});
 }
 
 // 表情气泡更新：按 TTL 判断是否可见；仅在 at 变化时重新触发动画，避免每次轮询重播
@@ -142,6 +170,14 @@ function connectWS() {
   ws.onmessage = (e) => {
     try {
       const st = JSON.parse(e.data);
+      // 动作回执：带 reqId，仅用于解锁 act() 的 await，不触发渲染（状态由广播负责）
+      if (st && st.reqId != null && wsAcks.has(st.reqId)) {
+        const rec = wsAcks.get(st.reqId);
+        clearTimeout(rec.timer);
+        wsAcks.delete(st.reqId);
+        rec.resolve(st.res || {});
+        return;
+      }
       lastPushAt = Date.now();
       $('netbar').classList.add('hide');
       reconnectDelay = 1000;
@@ -155,6 +191,11 @@ function connectWS() {
     // 断线 → 自动重连；HTTP 轮询兜底保证界面可用
     $('netbar').classList.remove('hide');
     ws = null;
+    // 拒绝所有未决回执，让 act() 立即回退 HTTP，而不是干等 1.2s 超时
+    for (const [, rec] of wsAcks) {
+      try { clearTimeout(rec.timer); rec.reject(new Error('ws-closed')); } catch (e) {}
+    }
+    wsAcks.clear();
     reconnectTimer = setTimeout(() => {
       reconnectDelay = Math.min(reconnectDelay * 1.5, 10000);
       connectWS();
@@ -687,7 +728,7 @@ function readyCountHtml(st) {
   return '<div class="readycount' + full + '">准备人数：<b>' + (st.readyCount || 0) + '</b>/3</div>';
 }
 function onReadyNext() {
-  post('ready', { roomId, playerId });
+  act('ready', { roomId, playerId });
 }
 
 function showBanner(st) {
@@ -869,7 +910,7 @@ function showJoinForm(msg) {
   if (msg) toast(msg);
 }
 
-$('readyBtn').onclick = () => post('ready', { roomId, playerId });
+$('readyBtn').onclick = () => act('ready', { roomId, playerId });
 $('botBtn').onclick = async () => {
   const r = await post('addbot', { roomId, playerId });
   if (r.err) toast(r.err);
