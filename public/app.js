@@ -24,6 +24,7 @@ let countdownTimer = null; // 倒计时定时器
 let mySeat = -1;           // 我的座位号（倒计时定位用）
 let lastState = null;      // 最近一次渲染用的完整状态（供事件委托读取 lastPlay/phase 等）
 let handSig = '';          // 手牌签名，避免每轮询重建 DOM
+let lastRenderPhase = '';  // 上一帧的 phase（用于检测“离开结算/展示阶段进入对局”时强制重画手牌）
 let pendingReq = null;     // {requestId, roomId, name} 自己发起的待审批申请
 let roomsTimer = null;     // 房间列表轮询
 let joinStatusTimer = null; // 申请状态轮询
@@ -274,8 +275,13 @@ function render(st) {
 
   // 换局或离开对局阶段时，清空上一局残留的选牌
   // （同一副牌 card id 是确定性的，新一局若不清空，旧 id 仍会“预选中”导致误报“不是合法牌型”）
-  if (st.roundNo !== lastRoundNo) { selected.clear(); lastRoundNo = st.roundNo; }
+  if (st.roundNo !== lastRoundNo) { selected.clear(); handSig = ''; lastRoundNo = st.roundNo; }
   if (st.phase !== 'playing') selected.clear();
+  // 关键修复：从 展示/亮牌/结算 阶段进入 叫地主/对局 时，强制重画手牌，
+  // 否则可能短暂残留上一局余牌、或新一手牌因签名恰好相同而不刷新。
+  const leavingEndPhase = (lastRenderPhase === 'showwin' || lastRenderPhase === 'reveal' || lastRenderPhase === 'finished');
+  if (leavingEndPhase && (st.phase === 'bidding' || st.phase === 'playing')) handSig = '';
+  lastRenderPhase = st.phase;
 
   const myInfo = st.seats[st.mySeat] || {};
   const multTag = (st.landlordSeat >= 0 && st.callMult > 1)
@@ -437,10 +443,12 @@ function renderSeats(st) {
       div.querySelector('.cnt').textContent = info.hand.length + ' 张';
       div.dataset.hc = String(info.hand.length);
     } else {
+      // 非亮牌阶段：若上一局亮牌残留的 .revealhand（真实牌面）还在，先清掉，避免下一局仍显示上一局余牌
+      const bc = div.querySelector('.backcards');
+      if (bc && bc.querySelector('.revealhand')) { bc.innerHTML = ''; div.dataset.hc = ''; }
       // 手牌数变化时才重建背面牌堆（背面牌本身无状态，没必要每轮询重绘 → 计数不闪）
       const hc = info.handCount;
       if (div.dataset.hc !== String(hc)) {
-        const bc = div.querySelector('.backcards');
         bc.innerHTML = '';
         for (let i = 0; i < Math.min(hc, 20); i++) bc.appendChild(makeCardBack());
         div.querySelector('.cnt').textContent = hc + ' 张';
