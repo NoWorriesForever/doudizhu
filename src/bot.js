@@ -32,23 +32,47 @@ function isDepleted(room, seat, v) {
 
 // ---- 叫地主决策 ----
 
-function botBid(room, seat) {
-  const p = room.players.find(pl => pl.seat === seat);
-  const c = countMap(p.hand.map(x => x.v));
+// 综合评估一手 17 张牌的强度（叫地主用）：
+// 王/2/炸弹是硬实力；A、三张、长顺子潜力、结构集中度都计入。
+function handStrength(hand) {
+  const c = countMap(hand.map(x => x.v));
   let power = 0;
 
-  if (c[17]) power += 3;
-  if (c[16]) power += 2;
-  power += (c[15] || 0) * 0.5;
-  for (const v in c) if (c[v] === 4) power += 2;
+  if (c[17]) power += 3;               // 大王
+  if (c[16]) power += 2;               // 小王
+  if (c[17] && c[16]) power += 1.5;    // 王炸额外奖励
+  power += (c[15] || 0) * 1.2;         // 2（每张）
+  power += (c[14] || 0) * 0.5;         // A（每张）
+  for (let v = 3; v <= 15; v++) if (c[v] === 4) power += 2.5; // 炸弹
+  for (let v = 3; v <= 15; v++) if (c[v] === 3) power += 0.6; // 三张（结构好）
+
+  // 长顺子潜力：最长连续（3..A，每点至少 1 张）段 >=5 记潜在顺子
+  let run = 0, best = 0;
+  for (let v = 3; v <= 14; v++) { if ((c[v] || 0) >= 1) { run++; if (run > best) best = run; } else run = 0; }
+  if (best >= 7) power += 1.5;
+  else if (best >= 5) power += 1;
+
+  // 连对潜力：>=3 连续对子
+  let drun = 0, dbest = 0;
+  for (let v = 3; v <= 14; v++) { if ((c[v] || 0) >= 2) { drun++; if (drun > dbest) dbest = drun; } else drun = 0; }
+  if (dbest >= 3) power += 0.8;
+
+  return power;
+}
+
+function botBid(room, seat) {
+  const p = room.players.find(pl => pl.seat === seat);
+  const power = handStrength(p.hand);
 
   if (room.bidRound === 'call') {
     room.bidSeat = seat;
-    if (power >= 2.5) return 'call';
+    // 叫地主门槛：牌力达到中等偏上才叫
+    if (power >= 3) return 'call';
     return 'pass';
   } else {
     room.bidSeat = seat;
-    if (power >= 4) return 'grab';
+    // 抢地主门槛更高：只有牌力明显强才抢（避免亏分）
+    if (power >= 4.5) return 'grab';
     return 'nograb';
   }
 }
@@ -274,17 +298,29 @@ function genBeat(hand, last, preferHigh) {
   };
 
   if (t === 'single') {
-    // 优先用非炸弹单张；无路可走才允许拆炸弹
-    const cand = vals.filter(v => v > rank && cnt(v) < 4);
-    const pool = cand.length ? cand : vals.filter(v => v > rank);
+    // 优先用「散单」（不属于任何对子/三张/顺子结构的单牌），避免拆牌型
+    const spare = findSpareSingles(hand).filter(cd => cd.v > rank);
+    if (spare.length) {
+      const order = preferHigh ? spare.slice().reverse() : spare;
+      return [order[0].id];
+    }
+    // 无散单可用：退回从最小结构里取单张（可能拆对子/三张），但永不拆炸弹当单张——
+    // 跟不上就交给上层 considerBomb 用整个炸弹夺权，比拆炸弹出单张明智得多。
+    const pool = vals.filter(v => v > rank && cnt(v) < 4);
     if (pool.length) {
       const order = preferHigh ? pool.slice().reverse() : pool;
       return [byV[order[0]][0].id];
     }
   }
   if (t === 'pair') {
-    const cand = vals.filter(v => v > rank && cnt(v) >= 2 && cnt(v) < 4);
-    const pool = cand.length ? cand : vals.filter(v => v > rank && cnt(v) >= 2);
+    // 优先用「散对」（不属于连对/三张/四张的独立对子），避免拆连对/三张
+    const spareP = findSparePairs(hand).filter(cds => cds[0].v > rank);
+    if (spareP.length) {
+      const order = preferHigh ? spareP.slice().reverse() : spareP;
+      return ids(order[0]);
+    }
+    // 永不拆炸弹当对子（同单张理由）
+    const pool = vals.filter(v => v > rank && cnt(v) >= 2 && cnt(v) < 4);
     if (pool.length) {
       const order = preferHigh ? pool.slice().reverse() : pool;
       return ids(byV[order[0]].slice(0, 2));
@@ -424,6 +460,19 @@ function considerBomb(hand, last, lastSeat, room, force) {
   if (last.type === 'rocket') return null;
   const pp = room.players.find(pl => pl.seat === lastSeat);
   const opponentNear = pp && pp.hand.length <= 2;
+
+  // 进攻性炸弹：炸掉上家后能一手出完剩余牌，直接炸（抢先获胜，不必等残局）
+  if (!force && !opponentNear) {
+    const cand = rocket || (list.length ? byV[list[0]].map(c => c.id) : null);
+    if (cand) {
+      const cc = parseCombo(hand.filter(c => cand.indexOf(c.id) >= 0).map(c => c.v));
+      if (beats(last, cc)) {
+        const rest = hand.filter(c => cand.indexOf(c.id) < 0);
+        if (parseCombo(rest.map(c => c.v))) return cand;
+      }
+    }
+  }
+
   if (!force && !opponentNear) return null;
 
   if (last.type === 'bomb') {
@@ -435,6 +484,16 @@ function considerBomb(hand, last, lastSeat, room, force) {
   if (list.length) return byV[list[0]].map(c => c.id);
   if (rocket) return rocket;
   return null;
+}
+
+// 农民是否值得花控牌（2/王/炸弹）去压对手这一手：
+// 残局（地主快赢 / 自己快赢）、或对手出的是大牌（2/王级）时才值得，否则保留控牌。
+function farmerShouldSpendControl(p, room, last) {
+  const ll = room.players.find(pl => pl.seat === room.landlordSeat);
+  if (ll && ll.hand.length <= 4) return true;   // 地主快赢 → 必须争夺牌权
+  if (p.hand.length <= 5) return true;          // 自己快赢 → 控牌该用就用
+  if (last.rank >= 15) return true;             // 对手出的是 2/王级大牌 → 值得争夺
+  return false;                                 // 否则保留控牌
 }
 
 // 校验一手牌合法且（跟牌时）压得过上家
@@ -487,7 +546,17 @@ function botMove(room, seat) {
   // ---- 跟对手（地主）：能压就压最小牌；必要时炸 ----
   if (!teammate) {
     const normal = genBeat(p.hand, last, false);
-    if (normal && tryPlay(p, normal, last)) return { action: 'play', ids: normal };
+    if (normal && tryPlay(p, normal, last)) {
+      const bc = comboOfIds(p.hand, normal);
+      const usesControl = bc.type === 'bomb' || bc.type === 'rocket' || bc.rank >= 15;
+      // 农民控牌保护：非残局、地主出的是小牌时，不浪费 2/王/炸去压无关紧要的小牌，
+      // 把控牌留给残局夺回牌权或收尾（地主会重新领出，早期硬压纯属浪费）
+      if (iAmFarmer && usesControl && !farmerShouldSpendControl(p, room, last)) {
+        // 跳过，进入下方考虑是否炸 / 否则不出
+      } else {
+        return { action: 'play', ids: normal };
+      }
+    }
     const bomb = considerBomb(p.hand, last, lastSeat, room, false);
     if (bomb && tryPlay(p, bomb, last)) return { action: 'play', ids: bomb };
     return { action: 'pass' };
