@@ -147,6 +147,7 @@ h1 b { color: var(--gold); }
 .readycount.full { background: linear-gradient(135deg, #1e8449, #2ecc71); }
 .rdy { color: #1e8449; font-weight: 700; margin-left: 6px; }
 .offtag { font-size: .7rem; color: #ffd0d0; background: rgba(210,59,59,.35); border-radius: 8px; padding: 1px 6px; }
+.offtag.warn { color: #ffe6b0; background: rgba(230,160,40,.38); }
 .netbar {
   position: fixed; top: 0; left: 0; right: 0; z-index: 20; text-align: center;
   background: #c0392b; color: #fff; font-size: .85rem; padding: 7px;

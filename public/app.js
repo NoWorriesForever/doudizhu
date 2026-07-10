@@ -461,7 +461,10 @@ function renderSeats(st) {
     if (st.phase === 'bidding' && info.isCaller && st.bidRound === 'grab') role = '已叫地主';
     let conn = '';
     if (info.connected === false && !info.isBot) {
-      conn = info.hosting ? ' <span class="offtag">托管中</span>' : ' <span class="offtag">掉线</span>';
+      // 已真正托管 → 红色「托管中」；仅短暂掉线未托管 → 琥珀色「重连中…」（不再一掉线就吓人）
+      conn = info.hosting
+        ? ' <span class="offtag">托管中</span>'
+        : ' <span class="offtag warn">重连中…</span>';
     }
 
     // 结构只建一次（首建/上一局残留），后续只更新文本与背面牌堆，避免每 500ms 轮询整块重建导致闪烁

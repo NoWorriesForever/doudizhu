@@ -75,8 +75,9 @@ function playerBySeat(room, seat) {
 }
 
 // 连接状态
-const DISCONNECT_MS = 3500;
-const HOST_MS = 6000;
+// 网络抖动容忍：6s 内无心跳仅标「重连中…」，10s 才真正托管代打，避免一抖就被代出牌
+const DISCONNECT_MS = 6000;   // 超过此时长未收到心跳 → UI 标记「重连中…」（此前 3.5s，过于敏感）
+const HOST_MS = 10000;        // 超过此时长 → 真正托管（代打 / 结算自动准备）
 const LOBBY_STALE_MS = 30000;
 const TURN_MS = 20000;          // 每人出牌/跟牌限时 20 秒
 const LEAD_MS = 25000;          // 领出（含地主拿到底牌后的首出）限时 25 秒
