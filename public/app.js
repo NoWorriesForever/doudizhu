@@ -8,6 +8,9 @@ const SUIT = ['♠', '♥', '♣', '♦'];
 // 叫/抢地主状态展示文案（座位昵称下方）
 const BID_LABEL = { call: '叫地主', grab: '抢地主', nocall: '不叫', nograb: '不抢' };
 
+// 表情展示时长（毫秒），需与后端 EMOTE_TTL_MS 保持一致
+const EMOTE_TTL_MS = 3500;
+
 let playerId = '';
 let roomId = '';
 let selected = new Set();
@@ -64,6 +67,44 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
   ));
+}
+
+// ---- 表情栏（玩家发送表情）----
+function buildEmoteBar(el) {
+  if (!el) return;
+  el.innerHTML = '';
+  Object.keys(EMOTES).forEach(id => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'emote-btn';
+    b.dataset.emote = id;
+    b.title = EMOTES[id].t;
+    b.textContent = EMOTES[id].e;
+    b.onclick = () => sendEmote(id);
+    el.appendChild(b);
+  });
+}
+function sendEmote(id) {
+  if (!playerId || !roomId) return;
+  post('emote', { roomId, playerId, emoteId: id }).catch(() => {});
+}
+
+// 表情气泡更新：按 TTL 判断是否可见；仅在 at 变化时重新触发动画，避免每次轮询重播
+function updateEmoteBubble(el, emote) {
+  if (!el) return;
+  const active = emote && (Date.now() - emote.at < EMOTE_TTL_MS);
+  if (active) {
+    if (el._at !== emote.at) {
+      el.textContent = (EMOTES[emote.id] ? EMOTES[emote.id].e : '😊');
+      el.classList.remove('show');
+      void el.offsetWidth; // 强制重排以重启动画
+      el.classList.add('show');
+      el._at = emote.at;
+    }
+  } else if (el._at !== null && el._at !== undefined) {
+    el.classList.remove('show');
+    el._at = null;
+  }
 }
 
 // ---- SSE 连接 ----
@@ -195,6 +236,7 @@ function render(st) {
 
   if (!inGame) {
     $('banner').classList.add('hide');
+    updateEmoteBubble($('myEmoteBubble'), null);
     $('lobbyMsg').textContent = st.message;
     $('roundInfo').innerHTML =
       '本轮共 <b style="color:var(--gold)">' + st.totalRounds + '</b> 局' +
@@ -208,7 +250,9 @@ function render(st) {
     const list = st.seats.filter(Boolean).map(s => {
       const meMark = s.seat === st.mySeat ? ' （你）' : '';
       const rdy = s.ready ? '<span class="rdy">已准备✓</span>' : '';
-      return '<div style="padding:4px 0">座位' + s.seat + '：' + s.name + meMark + (s.isBot ? '（机器人）' : '') + rdy + '</div>';
+      const em = (s.emote && (Date.now() - s.emote.at < EMOTE_TTL_MS))
+        ? ' <span class="em-sp">' + (EMOTES[s.emote.id] ? EMOTES[s.emote.id].e : '😊') + '</span>' : '';
+      return '<div style="padding:4px 0">座位' + s.seat + '：' + s.name + meMark + (s.isBot ? '（机器人）' : '') + rdy + em + '</div>';
     }).join('');
     $('seatList').innerHTML = list;
     const rc = $('readyCount');
@@ -243,6 +287,7 @@ function render(st) {
   $('gameMsg').textContent = st.message;
 
   renderSeats(st);
+  updateEmoteBubble($('myEmoteBubble'), st.seats[st.mySeat] ? st.seats[st.mySeat].emote : null);
   renderBottom(st);
   renderPlayed(st);
   renderBidding(st);
@@ -355,7 +400,8 @@ function renderSeats(st) {
     // 结构只建一次（首建/上一局残留），后续只更新文本与背面牌堆，避免每 500ms 轮询整块重建导致闪烁
     if (!div.dataset.built) {
       div.innerHTML = '<div class="nm"></div><div class="bidtag"></div><div class="role"></div>' +
-        '<div class="seat-timer"></div><div class="backcards"></div><div class="cnt"></div>';
+        '<div class="seat-timer"></div><div class="backcards"></div><div class="cnt"></div>' +
+        '<div class="emote-bubble"></div>';
       div.dataset.built = '1';
       div.dataset.hc = '';
     }
@@ -373,6 +419,9 @@ function renderSeats(st) {
     }
 
     div.querySelector('.role').innerHTML = role;
+
+    // 该座位表情气泡（其余玩家）
+    updateEmoteBubble(div.querySelector('.emote-bubble'), info.emote);
 
     if (revealing && info.hand) {
       const hd = document.createElement('div');
@@ -963,6 +1012,10 @@ function renderHostRequests(st) {
 // ---- 自动恢复 + 初始化 ----
 
 (function () {
+  // 初始化两个表情栏（大厅等待 + 牌桌）
+  buildEmoteBar($('lobbyEmoteBar'));
+  buildEmoteBar($('gameEmoteBar'));
+
   const savedRoom = localStorage.getItem('ddz_room');
   const savedPid = localStorage.getItem('ddz_pid');
   if (savedPid && savedRoom) {

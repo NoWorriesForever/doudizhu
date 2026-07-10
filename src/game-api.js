@@ -182,6 +182,17 @@ function processApi({ room, route, q, body, deps }) {
       return ok({ ok: true });
     }
 
+    // ---- 发送表情 ----
+    if (route === 'emote') {
+      const p = findPlayer(body.playerId);
+      if (!p) return err({ err: '未加入房间' });
+      const id = String(body.emoteId || '');
+      if (!roomModule.EMOTE_IDS.includes(id)) return err({ err: '无效的表情' });
+      roomModule.setEmote(room, p.seat, id);
+      broadcast(room);
+      return ok({ ok: true });
+    }
+
     // ---- 叫/抢地主 ----
     if (route === 'bid') {
       const p = findPlayer(body.playerId);

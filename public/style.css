@@ -53,12 +53,13 @@ h1 b { color: var(--gold); }
 .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
 
 /* 牌桌 */
-.table { flex: 1; display: flex; flex-direction: column; }
+.table { flex: 1; display: flex; flex-direction: column; position: relative; }
 .topbar { display: flex; justify-content: space-between; align-items: center; font-size: .8rem; opacity: .9; }
 .seats { display: flex; justify-content: space-between; margin: 8px 0; }
 .seat {
   background: rgba(0,0,0,.25); border-radius: 12px; padding: 10px 12px;
   min-width: 120px; text-align: center; border: 2px solid transparent;
+  position: relative;
 }
 .seat.active { border-color: var(--gold); box-shadow: 0 0 14px rgba(244,196,48,.5); }
 .seat .nm { font-weight: 600; }
@@ -308,3 +309,36 @@ h1 b { color: var(--gold); }
 .req-row .btn.ok { background: #1a9c54; color: #fff; }
 .req-row .btn.no { background: rgba(210,59,59,.85); color: #fff; }
 .req-empty { font-size: .8rem; opacity: .7; }
+
+/* 表情气泡（飘在座位/自己手牌上方） */
+.emote-bubble {
+  position: absolute; font-size: 2rem; line-height: 1; pointer-events: none; z-index: 6;
+  top: -10px; left: 50%; margin-left: -1.1rem;
+  display: none; filter: drop-shadow(0 2px 3px rgba(0,0,0,.5));
+}
+.emote-bubble.show { display: block; animation: emotePop 3.4s ease-out forwards; }
+/* 自己手牌上方的表情气泡：横向居中于牌桌底部 */
+.emote-bubble.my-emote {
+  bottom: 4px; top: auto; left: 50%; margin-left: -1.1rem;
+}
+@keyframes emotePop {
+  0%   { transform: translateY(0) scale(.2); opacity: 0; }
+  14%  { transform: translateY(-10px) scale(1.2); opacity: 1; }
+  34%  { transform: translateY(-15px) scale(1); opacity: 1; }
+  72%  { transform: translateY(-24px) scale(1); opacity: 1; }
+  100% { transform: translateY(-38px) scale(.9); opacity: 0; }
+}
+
+/* 大厅座位列表里的小表情 */
+.em-sp { font-size: 1.05rem; margin-left: 2px; }
+
+/* 表情栏（玩家点选发送） */
+.emote-bar { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin: 10px 0 4px; }
+.emote-btn {
+  width: 40px; height: 40px; font-size: 1.4rem; line-height: 1;
+  border-radius: 10px; border: 1px solid rgba(255,255,255,.22);
+  background: rgba(255,255,255,.1); cursor: pointer; padding: 0;
+  transition: transform .12s, background .12s;
+}
+.emote-btn:hover { background: rgba(255,255,255,.22); transform: translateY(-2px); }
+.emote-btn:active { transform: scale(.9); }

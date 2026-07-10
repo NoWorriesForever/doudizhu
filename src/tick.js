@@ -91,13 +91,25 @@ function runTick(room, deps) {
         if (p.isBot) {
           // 机器人思考约 3 秒后行动
           if (elapsed >= roomModule.BOT_THINK_MS) {
+            let kind, combo = null;
             if (room.phase === 'bidding') {
-              roomModule.doBid(room, curTurnSeat, botModule.botBid(room, curTurnSeat));
+              kind = 'bid';
+              const a = botModule.botBid(room, curTurnSeat);
+              roomModule.doBid(room, curTurnSeat, a);
+              combo = a; // 复用字段传“叫/抢/不叫”动作
             } else {
               const move = botModule.botMove(room, curTurnSeat);
-              if (move.action === 'play') roomModule.doPlay(room, curTurnSeat, move.ids);
-              else roomModule.doPass(room, curTurnSeat);
+              kind = move.action;
+              if (move.action === 'play') {
+                roomModule.doPlay(room, curTurnSeat, move.ids);
+                combo = (room.lastPlay && room.lastPlay.seat === curTurnSeat) ? room.lastPlay.combo : null;
+              } else {
+                roomModule.doPass(room, curTurnSeat);
+              }
             }
+            // 机器人表情：根据刚发生的动作与当前局面挑一个合适的表情
+            const eid = botModule.botEmoteOnAct(room, curTurnSeat, kind, combo);
+            if (eid) roomModule.setEmote(room, curTurnSeat, eid);
             changed = true;
           }
         } else if (disconnected) {

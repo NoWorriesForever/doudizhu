@@ -86,6 +86,19 @@ const SHOWWIN_MS = 3000;       // 展示赢家最后一手几秒后进入亮牌
 const REVEAL_MS = 4500;        // 亮牌（展示各家余牌）几秒后进入结算
 const NEXT_READY_MS = 3000;    // 结算后机器人/掉线真人自动准备下一局
 
+// ---- 表情系统 ----
+// 玩家与机器人共用的表情 id（与前端 public/emotes.js 保持一致）
+const EMOTE_IDS = ['smile', 'cry', 'laugh', 'angry', 'shock', 'cool', 'cheer', 'awkward', 'think', 'thumbs'];
+const EMOTE_TTL_MS = 3500;     // 表情在界面上展示/淡出的时长（前端据此判断是否仍可见）
+
+// 设置某座位的表情（带时间戳），并 bump 让所有人立即看到
+function setEmote(room, seat, id) {
+  const p = playerBySeat(room, seat);
+  if (!p || !EMOTE_IDS.includes(id)) return;
+  p.emote = { id, at: Date.now() };
+  bump(room);
+}
+
 function isConnected(p, now) {
   return !!(p && (p.isBot || (now - (p.lastSeen || 0) < DISCONNECT_MS)));
 }
@@ -108,6 +121,7 @@ function resetToLobby(room) {
   room.bidActions = {};
   room.curSeat = -1;
   room.lastPlay = null;
+  for (const p of room.players) p.emote = null;
   room.passes = 0;
   room.landlordPlays = 0;
   room.peasantPlays = 0;
@@ -185,6 +199,7 @@ function startDeal(room, opts) {
   room.winnerSide = null;
   room.turnStartAt = Date.now();
   room._lastTurnSeat = room.bidSeat;
+  for (const s of [0, 1, 2]) { const pl = playerBySeat(room, s); if (pl) pl.emote = null; }
 
   bump(room, `第 ${room.roundNo}/${room.totalRounds} 局 · ${playerBySeat(room, room.bidSeat).name} 先叫地主`);
 }
@@ -398,6 +413,14 @@ function finishGame(room, winnerSeat) {
   const wrole = winnerSide === 'landlord' ? '地主' : '农民';
   let extra = spring ? '（春天！）' : (antiSpring ? '（反春天！）' : '');
   room.message = `${wrole} ${wname} 先出完${extra}，本局结束！`;
+
+  // 败方机器人表情：哭泣（胜方机器人由出牌那一步已设为🎉庆祝）
+  const nowE = Date.now();
+  for (let s = 0; s < 3; s++) {
+    const pl = playerBySeat(room, s);
+    if (pl && pl.isBot && s !== winnerSeat) pl.emote = { id: 'cry', at: nowE };
+  }
+
   bump(room);
 }
 
@@ -432,10 +455,11 @@ function scoreboard(room) {
 }
 
 module.exports = {
-  createRoom, bump, playerBySeat, isConnected,
+  createRoom, bump, playerBySeat, isConnected, setEmote,
   resetToLobby, reseatAndReset, startDeal,
   doBid, assignLandlord, doPlay, doPass,
   finishGame, scoreboard, tryStartAfterReady,
   DISCONNECT_MS, HOST_MS, LOBBY_STALE_MS, TURN_MS, BOT_THINK_MS, REQUEST_TTL_MS,
   SHOWWIN_MS, REVEAL_MS, NEXT_READY_MS,
+  EMOTE_IDS, EMOTE_TTL_MS,
 };

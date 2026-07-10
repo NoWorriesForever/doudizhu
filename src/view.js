@@ -29,6 +29,7 @@ function viewFor(room, playerId) {
       hosting: !p.isBot && !conn && s === turnSeat
         && (now - (p.lastSeen || 0) > roomModule.HOST_MS),
       hand: revealing ? p.hand : undefined,
+      emote: p.emote ? { id: p.emote.id, at: p.emote.at } : null,
     };
   });
 

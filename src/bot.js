@@ -532,4 +532,45 @@ function botMove(room, seat) {
   return { action: 'pass' };
 }
 
-module.exports = { botBid, botMove, decompose, genBeat, bombsOf, comboOfIds, remainingCount, isDepleted, bombBotLead: botLead };
+// ============================================================
+// 机器人自动表情：根据当前局面挑一个最合适的表情返回（或 null 表示不发表情）
+// kind: 'bid'（叫/抢地主环节，combo 传动作字符串 call/grab/pass/nograb）
+//       'play'（出牌，combo 传实际牌型对象）| 'pass'（不出，combo 为 null）
+// ============================================================
+function botEmoteOnAct(room, seat, kind, combo) {
+  const p = room.players.find(pl => pl.seat === seat);
+  if (!p) return null;
+  const sideOf = s => (s === room.landlordSeat ? 'L' : 'F');
+  const mySide = sideOf(seat);
+  const iAmFarmer = seat !== room.landlordSeat;
+
+  // 1) 刚出完获胜
+  if (kind === 'play' && p.hand.length === 0) return 'cheer';
+  // 2) 出完一手后只剩 1~2 张（快赢了）→ 大笑
+  if (kind === 'play' && p.hand.length <= 2) return 'laugh';
+  // 3) 出了炸弹/王炸 → 得意
+  if (kind === 'play' && combo && (combo.type === 'bomb' || combo.type === 'rocket')) return 'cool';
+  // 4) 叫/抢到地主 → 得意
+  if (kind === 'bid' && (combo === 'call' || combo === 'grab')) return 'cool';
+  // 5) 没叫/没抢 → 尴尬
+  if (kind === 'bid' && (combo === 'pass' || combo === 'nograb')) return 'awkward';
+
+  // 6/7) 跟牌或不出：看队友/对手局势
+  if (kind === 'play' || kind === 'pass') {
+    // 队友（农民）快赢 → 庆祝
+    if (iAmFarmer) {
+      const mateSeat = [0, 1, 2].find(s => s !== seat && sideOf(s) === 'F');
+      const mate = mateSeat !== undefined ? room.players.find(pl => pl.seat === mateSeat) : null;
+      if (mate && mate.hand.length <= 2) return 'cheer';
+    }
+    // 对手（不同阵营）快赢 → 震惊
+    const oppSeat = room.lastPlay ? room.lastPlay.seat : -1;
+    const opp = oppSeat >= 0 ? room.players.find(pl => pl.seat === oppSeat) : null;
+    if (opp && sideOf(oppSeat) !== mySide && opp.hand.length <= 2) return 'shock';
+    // 不出且自己手牌很多（被压制）→ 思考
+    if (kind === 'pass' && p.hand.length >= 8) return 'think';
+  }
+  return null;
+}
+
+module.exports = { botBid, botMove, botEmoteOnAct, decompose, genBeat, bombsOf, comboOfIds, remainingCount, isDepleted, bombBotLead: botLead };
