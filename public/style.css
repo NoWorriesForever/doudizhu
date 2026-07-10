@@ -179,6 +179,30 @@ h1 b { color: var(--gold); }
 }
 #confirmModal .btn.ghost:hover { background: #596069; }
 .banner .win { color: var(--red); }
+
+/* 头部：标题 + 更新日志按钮 */
+.head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.head h1 { margin: 0; }
+#changelogBtn { white-space: nowrap; }
+
+/* 更新日志弹窗 */
+.changelog-box { max-width: 520px !important; width: 92vw; text-align: left !important; padding: 22px 24px 18px !important; }
+.changelog-box .big { display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px; }
+.curver { font-size: .9rem; font-weight: 600; color: var(--green); }
+.changelog-body { max-height: 62vh; overflow-y: auto; padding-right: 6px; margin: 4px 0 14px; border-top: 1px solid #eee; }
+.changelog-body::-webkit-scrollbar { width: 6px; }
+.changelog-body::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+.cl-entry { padding: 12px 2px; border-bottom: 1px dashed #e5e5e5; }
+.cl-entry:last-child { border-bottom: none; }
+.cl-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.cl-ver { font-size: 1.15rem; font-weight: 800; color: #111; }
+.ver-tag { font-size: .72rem; font-weight: 700; padding: 1px 8px; border-radius: 10px; }
+.ver-tag.major { background: linear-gradient(135deg, #ff7a45, #ff4d4f); color: #fff; }
+.ver-tag.minor { background: #eef2ff; color: #4f46e5; }
+.cl-date { margin-left: auto; font-size: .78rem; color: #999; }
+.cl-title { font-size: 1rem; font-weight: 700; color: #222; margin: 2px 0 6px; }
+.cl-items { margin: 0; padding-left: 18px; }
+.cl-items li { font-size: .86rem; line-height: 1.55; color: #444; }
 .hide { display: none !important; }
 .bidbtns { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
 .rules { font-size: .72rem; opacity: .75; text-align: center; margin-top: auto; padding-top: 10px; line-height: 1.5; }

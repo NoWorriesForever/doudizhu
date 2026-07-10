@@ -11,7 +11,10 @@
 <div class="netbar hide" id="netbar">连接中断，正在重连…（你的回合会被暂时托管，重连后自动接管）</div>
 
 <div class="wrap">
-  <h1>斗<b>地主</b> · 联机模拟器</h1>
+  <div class="head">
+    <h1>斗<b>地主</b> · 联机模拟器</h1>
+    <button class="btn ghost sm" id="changelogBtn">更新日志</button>
+  </div>
   <div class="sub" id="sub">不同 IP 打开本页 + 相同房间号即可同桌 · 满3人准备后自动发牌</div>
 
   <!-- 大厅 -->
@@ -100,9 +103,19 @@
       </div>
     </div>
   </div>
+
+  <!-- 更新日志弹窗 -->
+  <div class="banner hide" id="changelogModal">
+    <div class="box changelog-box">
+      <div class="big">更新日志 <span class="curver" id="changelogVer"></span></div>
+      <div class="changelog-body" id="changelogBody"></div>
+      <button class="btn" id="changelogClose">关闭</button>
+    </div>
+  </div>
 </div>
 
 <script src="emotes.js"></script>
+<script src="changelog.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

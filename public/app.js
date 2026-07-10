@@ -70,6 +70,26 @@ function escapeHtml(s) {
   ));
 }
 
+// ---- 更新日志弹窗 ----
+function renderChangelog() {
+  const data = window.CHANGELOG || [];
+  const body = $('changelogBody');
+  if (!body) return;
+  body.innerHTML = data.map(e => {
+    const tag = e.type === 'major'
+      ? '<span class="ver-tag major">大版本</span>'
+      : '<span class="ver-tag minor">更新</span>';
+    const lis = (e.items || []).map(it => '<li>' + escapeHtml(it) + '</li>').join('');
+    return '<div class="cl-entry">' +
+      '<div class="cl-head"><span class="cl-ver">v' + escapeHtml(e.version) + '</span>' +
+      tag + '<span class="cl-date">' + escapeHtml(e.date) + '</span></div>' +
+      '<div class="cl-title">' + escapeHtml(e.title) + '</div>' +
+      '<ul class="cl-items">' + lis + '</ul></div>';
+  }).join('');
+  const latest = data[0];
+  $('changelogVer').textContent = latest ? ('当前 v' + latest.version) : '';
+}
+
 // ---- 表情栏（玩家发送表情）----
 function buildEmoteBar(el) {
   if (!el) return;
@@ -1023,6 +1043,15 @@ function renderHostRequests(st) {
   // 初始化两个表情栏（大厅等待 + 牌桌）
   buildEmoteBar($('lobbyEmoteBar'));
   buildEmoteBar($('gameEmoteBar'));
+
+  // 更新日志弹窗
+  const clModal = $('changelogModal');
+  $('changelogBtn').addEventListener('click', () => {
+    renderChangelog();
+    clModal.classList.remove('hide');
+  });
+  $('changelogClose').onclick = () => clModal.classList.add('hide');
+  clModal.addEventListener('click', e => { if (e.target === clModal) clModal.classList.add('hide'); });
 
   const savedRoom = localStorage.getItem('ddz_room');
   const savedPid = localStorage.getItem('ddz_pid');
