@@ -1103,8 +1103,16 @@ function renderHostRequests(st) {
     playerId = savedPid;
     roomId = savedRoom;
     $('room').value = savedRoom;
+    // 与 enterRoom 一致的会话重置：设 6 秒宽限，避免刷新后首屏拉状态
+    // 遇 DO 冷启动/隧道抖动返回 mySeat<0 时被误判“已离开房间”踢回大厅。
+    joinGraceUntil = Date.now() + 6000;
+    lastRoundNo = -1;        // 重置：进入新会话首帧强制清残留选牌 + 重画底牌
+    lastBottomSig = '';
+    consecutiveBad = 0;
+    lastPushAt = 0;
     $('lobbyInfo').classList.remove('hide');
     updateLobbyChrome();
+    toast('正在恢复对局…');
     startStatePolling();
     connectWS();
   } else {
