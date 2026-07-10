@@ -98,6 +98,51 @@ function escapeHtml(s) {
   ));
 }
 
+// ---- 邀请链接（房间码直链）----
+function buildInviteUrl() {
+  const base = location.origin + location.pathname;
+  return base + '?room=' + encodeURIComponent(roomId);
+}
+async function copyInviteLink() {
+  if (!roomId) { toast('尚未进入房间'); return; }
+  const url = buildInviteUrl();
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(url);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); ta.remove();
+    }
+    toast('已复制邀请链接，发给朋友即可同桌：' + url);
+  } catch (e) {
+    // 复制失败（如非 HTTPS）：直接显示链接让用户手动复制
+    prompt('复制此链接发给朋友：', url);
+  }
+}
+
+// ---- 出牌特效层（炸弹/火箭全屏反馈）----
+function createFxLayer() {
+  let fx = document.getElementById('fxLayer');
+  if (!fx) {
+    fx = document.createElement('div');
+    fx.id = 'fxLayer';
+    document.body.appendChild(fx);
+  }
+  return fx;
+}
+function playFx(type) {
+  const fx = createFxLayer();
+  fx.className = '';
+  void fx.offsetWidth; // 强制重排以重启动画
+  fx.classList.add(type === 'rocket' ? 'fx-rocket' : 'fx-bomb');
+  // 出牌区震屏
+  const pb = $('playedBox');
+  if (pb) { pb.classList.add('shake'); setTimeout(() => pb.classList.remove('shake'), 480); }
+  setTimeout(() => { fx.className = ''; }, 950);
+}
+
 // ---- 更新日志弹窗 ----
 function renderChangelog() {
   const data = window.CHANGELOG || [];
@@ -321,6 +366,7 @@ function render(st) {
     rc.innerHTML = '准备人数：<b>' + (st.readyCount || 0) + '</b>/3 · 共 ' + st.playerCount + '/3 人';
     rc.classList.toggle('full', (st.readyCount || 0) >= 3);
     $('readyBtn').textContent = st.myReady ? '取消准备' : '准备';
+    renderModeBox(st);
     renderHostRequests(st);
     return;
   }
@@ -349,8 +395,11 @@ function render(st) {
     ? ' · <span class="mytotal">倍数 <b>\u00d7' + st.callMult + '</b></span>' : '';
   const roundTag = st.roundNo > 0
     ? ' · <span class="mytotal">第 <b>' + st.roundNo + '/' + st.totalRounds + '</b> 局</span>' : '';
+  const modeTag = st.mode && st.mode !== 'classic'
+    ? ' · <span class="mytotal">模式 ' + ({ classic: '经典', noshuffle: '不洗牌', endgame: '残局' }[st.mode] || st.mode) + '</span>'
+    : '';
   $('roomTag').innerHTML =
-    '房间 ' + st.roomId + roundTag + ' · <span class="mytotal">积分 <b>' + fmtScore(myInfo.score || 0) + '</b></span>' + multTag;
+    '房间 ' + st.roomId + roundTag + modeTag + ' · <span class="mytotal">积分 <b>' + fmtScore(myInfo.score || 0) + '</b></span>' + multTag;
   $('gameMsg').textContent = st.message;
 
   renderSeats(st);
@@ -593,6 +642,9 @@ function renderPlayed(st) {
     const sig = st.lastPlay.seat + '|' + st.lastPlay.cards.map(c => c.id).join(',');
     if (sig !== prevPlaySig) {
       animatePlay(st.lastPlay.seat, st.mySeat, pb);
+      // 炸弹 / 火箭：全屏反馈 + 出牌区震屏
+      const ct = st.lastPlay.combo && st.lastPlay.combo.type;
+      if (ct === 'bomb' || ct === 'rocket') playFx(ct);
     }
     prevPlaySig = sig;
   } else if (st.phase === 'playing') {
@@ -923,6 +975,8 @@ $('exitLobbyBtn').onclick = async () => {
   if (playerId) { try { await post('leave', { roomId, playerId }); } catch (e) {} }
   showJoinForm();
 };
+$('shareBtn').onclick = () => copyInviteLink();
+$('shareLobbyBtn').onclick = () => copyInviteLink();
 $('leaveBtn').onclick = () => {
   $('confirmModal').classList.remove('hide'); // 先弹确认框，避免误触退出
 };
@@ -944,6 +998,46 @@ function updateLobbyChrome() {
   // 未进房：根据是否等待审批切换「房间列表 / 等待条」
   $('roomsList').classList.toggle('hide', !!pendingReq);
   $('reqWaiting').classList.toggle('hide', !pendingReq);
+}
+
+// 房主在大厅设置发牌模式；非房主只看当前模式
+const ENDGAME_NAMES = ['火箭对决', '顺子争锋', '残局收割'];
+let lastModeSig = '';
+function renderModeBox(st) {
+  const box = $('modeBox');
+  if (!box) return;
+  const sig = (st.canSetMode ? 'host' : 'guest') + ':' + st.mode + ':' + st.endgamePreset;
+  if (sig === lastModeSig) return;   // 仅在模式变化时才重建，避免每 500ms 轮询重绘下拉框
+  lastModeSig = sig;
+
+  if (st.canSetMode) {
+    const modes = [['classic', '经典'], ['noshuffle', '不洗牌'], ['endgame', '残局练习']];
+    let html = '<div class="mode-row"><span class="mode-label">发牌模式</span>';
+    modes.forEach(([m, label]) => {
+      html += '<button type="button" class="btn ghost xs mode-btn' + (st.mode === m ? ' on' : '') +
+        '" data-mode="' + m + '">' + label + '</button>';
+    });
+    html += '</div>';
+    if (st.mode === 'endgame') {
+      html += '<div class="mode-row"><span class="mode-label">选择残局</span><select id="presetSel" class="preset-sel">';
+      ENDGAME_NAMES.forEach((n, i) => {
+        html += '<option value="' + i + '"' + (st.endgamePreset === i ? ' selected' : '') + '>' + n + '</option>';
+      });
+      html += '</select></div>';
+    }
+    box.innerHTML = html;
+    box.classList.remove('hide');
+    box.querySelectorAll('.mode-btn').forEach(b => {
+      b.onclick = () => act('setmode', { roomId, playerId, mode: b.dataset.mode });
+    });
+    const ps = $('presetSel');
+    if (ps) ps.onchange = () => act('setmode', { roomId, playerId, mode: 'endgame', preset: +ps.value });
+  } else {
+    const names = { classic: '经典', noshuffle: '不洗牌', endgame: '残局练习' };
+    const cur = (names[st.mode] || st.mode) + (st.mode === 'endgame' ? '：' + (ENDGAME_NAMES[st.endgamePreset] || '') : '');
+    box.innerHTML = '<div class="mode-row"><span class="mode-label">发牌模式</span><span class="mode-cur">' + cur + '</span></div>';
+    box.classList.remove('hide');
+  }
 }
 
 function startRoomsPolling() {
@@ -1084,6 +1178,16 @@ function renderHostRequests(st) {
 // ---- 自动恢复 + 初始化 ----
 
 (function () {
+  // 邀请直链：URL 带 ?room=XXX 时，自动填入房间号，输入昵称即可同桌
+  const inviteRoom = new URLSearchParams(location.search).get('room');
+  if (inviteRoom) {
+    $('room').value = inviteRoom;
+    if (!localStorage.getItem('ddz_pid')) {
+      toast('已为你填入邀请房间「' + inviteRoom + '」，输入昵称后点“进入房间”即可同桌');
+      const nm = $('name'); if (nm) nm.focus();
+    }
+  }
+
   // 初始化两个表情栏（大厅等待 + 牌桌）
   buildEmoteBar($('lobbyEmoteBar'));
   buildEmoteBar($('gameEmoteBar'));

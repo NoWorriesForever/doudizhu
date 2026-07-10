@@ -229,6 +229,22 @@ function processApi({ room, route, q, body, deps }) {
       return ok({ ok: true });
     }
 
+    // ---- 设置发牌模式（房主，仅大厅）----
+    if (route === 'setmode') {
+      const p = findPlayer(body.playerId);
+      if (!p) return err({ err: '未加入房间' });
+      if (room.hostId && p.id !== room.hostId) return err({ err: '只有房主可以设置模式' });
+      if (room.phase !== 'lobby') return err({ err: '游戏已开始，无法修改模式' });
+      const allowed = ['classic', 'noshuffle', 'endgame'];
+      const modeNames = { classic: '经典（随机洗牌）', noshuffle: '不洗牌（固定发牌）', endgame: '残局练习' };
+      if (!allowed.includes(body.mode)) return err({ err: '无效的模式' });
+      room.mode = body.mode;
+      if (body.preset != null) room.endgamePreset = Math.max(0, body.preset | 0);
+      roomModule.bump(room, `房间模式已设为：${modeNames[body.mode]}`);
+      broadcast(room);
+      return ok({ ok: true });
+    }
+
     // ---- 下一局 ----
     if (route === 'next') {
       if (room.phase !== 'finished') return err({ err: '当前不能开始下一局' });

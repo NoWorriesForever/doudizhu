@@ -53,12 +53,24 @@ function viewFor(room, playerId) {
     bottom: (room.phase === 'playing' || room.phase === 'reveal' || room.phase === 'showwin') ? room.bottom : [],
     bidSeat: room.bidSeat,
     curSeat: room.curSeat,
-    lastPlay: room.lastPlay ? { seat: room.lastPlay.seat, cards: room.lastPlay.cards } : null,
+    lastPlay: room.lastPlay ? {
+      seat: room.lastPlay.seat,
+      combo: room.lastPlay.combo ? {
+        type: room.lastPlay.combo.type,
+        rank: room.lastPlay.combo.rank,
+        len: room.lastPlay.combo.len,
+      } : null,
+      cards: room.lastPlay.cards,
+    } : null,
     winnerSide: room.winnerSide,
     result: room.lastResult,
     playerCount: room.players.length,
     readyCount: room.players.filter(p => p.ready).length,
     allReady: room.players.length === 3 && room.players.every(p => p.ready),
+    // 发牌模式（房主在大厅设置，前端据此显示模式选择器 / 当前模式）
+    mode: room.mode || 'classic',
+    endgamePreset: room.endgamePreset || 0,
+    canSetMode: !!(me && room.hostId && me.id === room.hostId && room.phase === 'lobby'),
     // 房主 + 加入申请（仅房主视角可见 pendingRequests）
     isHost: !!(me && room.hostId && me.id === room.hostId),
     pendingRequests: (me && room.hostId && me.id === room.hostId)

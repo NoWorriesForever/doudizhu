@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>斗地主 · 联机模拟器</title>
-<link rel="stylesheet" href="style.css?v=3.7">
+<link rel="stylesheet" href="style.css?v=3.8">
 </head>
 <body>
 <div class="toast" id="toast"></div>
@@ -49,10 +49,12 @@
       <div id="roundInfo"></div>
       <div id="seatList"></div>
       <div id="readyCount" class="readycount"></div>
+      <div id="modeBox" class="modebox hide"></div>
       <div class="emote-bar" id="lobbyEmoteBar"></div>
       <div class="row">
         <button class="btn sm" id="readyBtn">准备</button>
         <button class="btn ghost sm" id="botBtn">加机器人</button>
+        <button class="btn ghost sm" id="shareLobbyBtn">分享房间</button>
         <button class="btn ghost sm" id="exitLobbyBtn">返回大厅</button>
       </div>
       <div id="reqBox" class="reqbox hide"></div>
@@ -63,6 +65,7 @@
   <div class="table hide" id="game">
     <div class="topbar">
       <span id="roomTag"></span>
+      <button class="btn ghost sm" id="shareBtn">分享房间</button>
       <button class="btn ghost sm" id="leaveBtn">退出</button>
     </div>
     <div class="seats" id="seats"></div>
@@ -114,8 +117,8 @@
   </div>
 </div>
 
-<script src="emotes.js?v=3.7"></script>
-<script src="changelog.js?v=3.7"></script>
-<script src="app.js?v=3.7"></script>
+<script src="emotes.js?v=3.8"></script>
+<script src="changelog.js?v=3.8"></script>
+<script src="app.js?v=3.8"></script>
 </body>
 </html>

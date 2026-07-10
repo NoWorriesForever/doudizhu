@@ -378,3 +378,66 @@ h1 b { color: var(--gold); }
 }
 .emote-btn:hover { background: rgba(255,255,255,.22); transform: translateY(-2px); }
 .emote-btn:active { transform: scale(.9); }
+
+/* ============ 出牌特效：炸弹/火箭全屏反馈 ============ */
+#fxLayer {
+  position: fixed; inset: 0; pointer-events: none; z-index: 80;
+  opacity: 0; display: flex; align-items: center; justify-content: center;
+}
+#fxLayer.fx-bomb {
+  animation: fxBomb .9s ease-out;
+}
+#fxLayer.fx-rocket {
+  animation: fxRocket .95s ease-out;
+}
+@keyframes fxBomb {
+  0%   { opacity: 0; background: radial-gradient(circle at center, rgba(255,80,40,.0), transparent 70%); }
+  18%  { opacity: 1; background: radial-gradient(circle at center, rgba(255,90,40,.85), rgba(120,0,0,.5) 70%); }
+  100% { opacity: 0; background: radial-gradient(circle at center, rgba(255,80,40,.0), transparent 70%); }
+}
+@keyframes fxRocket {
+  0%   { opacity: 0; background: radial-gradient(circle at center, rgba(255,210,80,.0), transparent 70%); }
+  15%  { opacity: 1; background: radial-gradient(circle at center, rgba(255,225,90,.9), rgba(160,120,0,.45) 70%); }
+  40%  { opacity: .9; }
+  100% { opacity: 0; background: radial-gradient(circle at center, rgba(255,210,80,.0), transparent 70%); }
+}
+#fxLayer.fx-bomb::after {
+  content: '💥'; font-size: 22vh; filter: drop-shadow(0 0 24px rgba(255,120,40,.9));
+  animation: fxPop .9s ease-out;
+}
+#fxLayer.fx-rocket::after {
+  content: '🚀💥'; font-size: 16vh; filter: drop-shadow(0 0 28px rgba(255,220,90,.95));
+  animation: fxLaunch .95s cubic-bezier(.2,.7,.3,1);
+}
+@keyframes fxPop {
+  0% { transform: scale(.2) rotate(-12deg); opacity: 0; }
+  25% { transform: scale(1.25) rotate(6deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); opacity: 0; }
+}
+@keyframes fxLaunch {
+  0% { transform: translateY(40vh) scale(.5); opacity: 0; }
+  25% { transform: translateY(0) scale(1); opacity: 1; }
+  100% { transform: translateY(-30vh) scale(1.1); opacity: 0; }
+}
+
+/* 出牌区震屏 */
+#playedBox.shake { animation: pbShake .46s ease; }
+@keyframes pbShake {
+  0%,100% { transform: translate(0,0); }
+  20% { transform: translate(-6px, 3px); }
+  40% { transform: translate(6px, -3px); }
+  60% { transform: translate(-4px, 2px); }
+  80% { transform: translate(4px, -2px); }
+}
+
+/* ============ 发牌模式选择器（房主大厅内） ============ */
+.modebox { margin: 8px 0 2px; }
+.mode-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
+.mode-label { font-size: .82rem; opacity: .8; min-width: 60px; }
+.mode-btn { padding: 7px 12px; min-height: 34px; font-size: .85rem; }
+.mode-btn.on { background: var(--gold, #f5c542); color: #2a1d00; border-color: var(--gold, #f5c542); font-weight: 700; }
+.mode-cur { font-size: .9rem; color: var(--gold, #f5c542); font-weight: 600; }
+.preset-sel {
+  background: rgba(255,255,255,.1); color: #fff; border: 1px solid rgba(255,255,255,.25);
+  border-radius: 9px; padding: 6px 10px; font-size: .85rem; max-width: 200px;
+}
