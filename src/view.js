@@ -69,7 +69,6 @@ function viewFor(room, playerId) {
     allReady: room.players.length === 3 && room.players.every(p => p.ready),
     // 发牌模式（房主在大厅设置，前端据此显示模式选择器 / 当前模式）
     mode: room.mode || 'classic',
-    endgamePreset: room.endgamePreset || 0,
     canSetMode: !!(me && room.hostId && me.id === room.hostId && room.phase === 'lobby'),
     // 房主 + 加入申请（仅房主视角可见 pendingRequests）
     isHost: !!(me && room.hostId && me.id === room.hostId),

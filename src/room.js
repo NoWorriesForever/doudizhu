@@ -9,8 +9,7 @@ let pidSeq = 1;
 function createRoom(id) {
   return {
     id,
-    mode: 'classic',          // 'classic' | 'noshuffle' | 'endgame'：发牌模式（房主在大厅设置）
-    endgamePreset: 0,         // 残局练习选用的预设下标
+    mode: 'classic',          // 'classic' | 'noshuffle'：发牌模式（房主在大厅设置）
     players: [],
     phase: 'lobby',          // lobby | bidding | playing | showwin | reveal | finished
     bottom: [],
@@ -168,7 +167,6 @@ function reseatAndReset(room) {
 
 function startDeal(room, opts) {
   const { buildDeck, shuffle, sortHand, labelOf } = require('./cards');
-  const { ENDGAMES } = require('./presets');
   // 流局重发时 count:false，不计入总局数
   if (!opts || opts.count !== false) {
     room.roundNo = (room.roundNo || 0) + 1;
@@ -178,13 +176,6 @@ function startDeal(room, opts) {
   room.bombCount = 0;
   room.landlordPlays = 0;
   room.peasantPlays = 0;
-
-  // 残局练习模式：直接载入预设手牌，跳过叫地主，地主按预设先出
-  if (room.mode === 'endgame') {
-    const preset = ENDGAMES[(room.endgamePreset || 0) % ENDGAMES.length];
-    loadEndgame(room, preset, labelOf);
-    return;
-  }
 
   const deck = room.mode === 'noshuffle' ? buildDeck() : shuffle(buildDeck());
   for (const s of [0, 1, 2]) playerBySeat(room, s).hand = [];
@@ -214,40 +205,6 @@ function startDeal(room, opts) {
   for (const s of [0, 1, 2]) { const pl = playerBySeat(room, s); if (pl) pl.emote = null; }
 
   bump(room, `第 ${room.roundNo}/${room.totalRounds} 局 · ${playerBySeat(room, room.bidSeat).name} 先叫地主`);
-}
-
-// 残局练习：把预设手牌直接装进三名玩家，跳过叫地主，地主按预设先出。
-// preset.hands / preset.bottom 为 [{v, suit}] 数组；王 suit=-1。
-function loadEndgame(room, preset, labelOf) {
-  const { sortHand } = require('./cards');
-  const toCard = (c) => ({
-    id: c.v + '_' + (c.suit < 0 ? 'J' + c.v : c.suit),
-    v: c.v,
-    suit: c.suit,
-    label: c.v >= 16 ? (c.v === 17 ? '大王' : '小王') : labelOf(c.v),
-  });
-  for (const s of [0, 1, 2]) { const p = playerBySeat(room, s); if (p) p.hand = []; }
-  (preset.hands || []).forEach((cards, s) => {
-    const p = playerBySeat(room, s);
-    if (!p) return;
-    p.hand = (cards || []).map(toCard);
-    sortHand(p.hand);
-  });
-  room.bottom = (preset.bottom || []).map(toCard);
-  room.landlordSeat = preset.landlordSeat;
-  room.phase = 'playing';
-  room.curSeat = preset.landlordSeat;
-  room.lastPlay = null;
-  room.passes = 0;
-  room.callMult = 1;          // 残局无叫抢，倍数从 1 起算
-  room.bombCount = 0;
-  room.landlordPlays = 0;
-  room.peasantPlays = 0;
-  room.winnerSide = null;
-  room.turnStartAt = Date.now();
-  room._lastTurnSeat = preset.landlordSeat;
-  for (const s of [0, 1, 2]) { const pl = playerBySeat(room, s); if (pl) pl.emote = null; }
-  bump(room, `残局练习 · ${preset.name} · ${playerBySeat(room, room.landlordSeat).name} 当地主先出`);
 }
 
 // ---- 叫/抢地主 ----

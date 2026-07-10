@@ -396,7 +396,7 @@ function render(st) {
   const roundTag = st.roundNo > 0
     ? ' · <span class="mytotal">第 <b>' + st.roundNo + '/' + st.totalRounds + '</b> 局</span>' : '';
   const modeTag = st.mode && st.mode !== 'classic'
-    ? ' · <span class="mytotal">模式 ' + ({ classic: '经典', noshuffle: '不洗牌', endgame: '残局' }[st.mode] || st.mode) + '</span>'
+    ? ' · <span class="mytotal">模式 ' + ({ classic: '经典', noshuffle: '不洗牌' }[st.mode] || st.mode) + '</span>'
     : '';
   $('roomTag').innerHTML =
     '房间 ' + st.roomId + roundTag + modeTag + ' · <span class="mytotal">积分 <b>' + fmtScore(myInfo.score || 0) + '</b></span>' + multTag;
@@ -1001,40 +1001,30 @@ function updateLobbyChrome() {
 }
 
 // 房主在大厅设置发牌模式；非房主只看当前模式
-const ENDGAME_NAMES = ['火箭对决', '顺子争锋', '残局收割'];
 let lastModeSig = '';
 function renderModeBox(st) {
   const box = $('modeBox');
   if (!box) return;
-  const sig = (st.canSetMode ? 'host' : 'guest') + ':' + st.mode + ':' + st.endgamePreset;
+  const sig = (st.canSetMode ? 'host' : 'guest') + ':' + st.mode;
   if (sig === lastModeSig) return;   // 仅在模式变化时才重建，避免每 500ms 轮询重绘下拉框
   lastModeSig = sig;
 
   if (st.canSetMode) {
-    const modes = [['classic', '经典'], ['noshuffle', '不洗牌'], ['endgame', '残局练习']];
+    const modes = [['classic', '经典'], ['noshuffle', '不洗牌']];
     let html = '<div class="mode-row"><span class="mode-label">发牌模式</span>';
     modes.forEach(([m, label]) => {
       html += '<button type="button" class="btn ghost xs mode-btn' + (st.mode === m ? ' on' : '') +
         '" data-mode="' + m + '">' + label + '</button>';
     });
     html += '</div>';
-    if (st.mode === 'endgame') {
-      html += '<div class="mode-row"><span class="mode-label">选择残局</span><select id="presetSel" class="preset-sel">';
-      ENDGAME_NAMES.forEach((n, i) => {
-        html += '<option value="' + i + '"' + (st.endgamePreset === i ? ' selected' : '') + '>' + n + '</option>';
-      });
-      html += '</select></div>';
-    }
     box.innerHTML = html;
     box.classList.remove('hide');
     box.querySelectorAll('.mode-btn').forEach(b => {
       b.onclick = () => act('setmode', { roomId, playerId, mode: b.dataset.mode });
     });
-    const ps = $('presetSel');
-    if (ps) ps.onchange = () => act('setmode', { roomId, playerId, mode: 'endgame', preset: +ps.value });
   } else {
-    const names = { classic: '经典', noshuffle: '不洗牌', endgame: '残局练习' };
-    const cur = (names[st.mode] || st.mode) + (st.mode === 'endgame' ? '：' + (ENDGAME_NAMES[st.endgamePreset] || '') : '');
+    const names = { classic: '经典', noshuffle: '不洗牌' };
+    const cur = (names[st.mode] || st.mode);
     box.innerHTML = '<div class="mode-row"><span class="mode-label">发牌模式</span><span class="mode-cur">' + cur + '</span></div>';
     box.classList.remove('hide');
   }
